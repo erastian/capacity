@@ -1,0 +1,276 @@
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat = "cjs"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum ProgramStatus {
+  ACTIVE
+  SUSPENDED
+  CLOSED
+}
+
+enum OutboundEventType {
+  RESERVATION_CREATED
+  RESERVATION_RELEASED
+  RESERVATION_CANCELLED
+  PROGRAM_BREAK_OPENED
+  PROGRAM_BREAK_RESOLVED
+}
+
+enum BreakReason {
+  CURRENCY_MISMATCH
+  SNAPSHOT_VERSION_CONFLICT
+  OVERPAYMENT
+  FX_SETTLED_AMOUNT_MISMATCH
+  UNKNOWN_INVOICE
+  CANCELLATION_AFTER_REPAYMENT
+  PROGRAM_MISMATCH
+}
+
+enum ReservationStatus {
+  ACTIVE
+  PARTIALLY_RELEASED
+  RELEASED
+  CANCELLED
+}
+
+enum ReleaseReason {
+  REPAYMENT
+  CANCELLATION
+  CREDIT_NOTE
+}
+
+enum FxRateType {
+  VALUATION
+  CONVERSION
+}
+
+enum FxRateStatus {
+  ACTIVE
+  SUSPENDED
+}
+
+enum LedgerEntryType {
+  RESERVE
+  RELEASE
+  TREASURY_LIMIT_UPDATED
+  TREASURY_EXTERNAL_UTILIZATION_UPDATED
+  TREASURY_SNAPSHOT
+}
+
+enum InboundMessageType {
+  LIMIT_UPDATED
+  EXTERNAL_UTILIZATION_UPDATED
+  PROGRAM_SNAPSHOT
+  PROGRAM_STATUS_CHANGED
+  RECONCILIATION_BATCH_COMPLETED
+  INVOICE_FUNDED
+  INVOICE_PAYMENT_ALLOCATED
+  INVOICE_FUNDING_CANCELLED
+  INVOICE_CREDIT_NOTE_APPLIED
+  FX_RATE_PUBLISHED
+  BREAK_RESOLVED
+}
+
+enum InboundMessageOutcome {
+  APPLIED
+  STALE
+  REJECTED
+}
+
+model Program {
+  id                      String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  externalId              String             @unique @map("external_id")
+  clientRef               String             @map("client_ref")
+  currency                String             @db.Char(3)
+  creditLimit             Decimal            @map("credit_limit") @db.Decimal(20, 4)
+  externalUtilized        Decimal            @default(0) @map("external_utilized") @db.Decimal(20, 4)
+  reserved                Decimal            @default(0) @db.Decimal(20, 4)
+  status                  ProgramStatus      @default(ACTIVE)
+  statusReason            String?            @map("status_reason")
+  statusChangedAt         DateTime?          @map("status_changed_at") @db.Timestamptz(3)
+  statusVersion           BigInt?            @map("status_version")
+  creditLimitVersion      BigInt?            @map("credit_limit_version")
+  externalUtilizedVersion BigInt?            @map("external_utilized_version")
+  openBlockingBreaks      Int                @default(0) @map("open_blocking_breaks")
+  treasurySyncedAt        DateTime?          @map("treasury_synced_at") @db.Timestamptz(3)
+  reservations            Reservation[]
+  breaks                  ProgramBreak[]
+  ledger                  CapacityLedger[]
+  inboundMessages         ProcessedMessage[]
+  outboxEvents            OutboxEvent[]
+  createdAt               DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt               DateTime           @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@index([clientRef])
+  @@map("program")
+}
+
+model ProgramBreak {
+  id                  String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  programId           String            @map("program_id") @db.Uuid
+  reason              BreakReason
+  blocking            Boolean
+  messageId           String            @map("message_id")
+  details             Json
+  openedAt            DateTime          @default(now()) @map("opened_at") @db.Timestamptz(3)
+  resolvedAt          DateTime?         @map("resolved_at") @db.Timestamptz(3)
+  resolutionMessageId String?           @map("resolution_message_id")
+  program             Program           @relation(fields: [programId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  message             ProcessedMessage  @relation("BreakOpenedBy", fields: [messageId], references: [messageId], onDelete: Restrict, onUpdate: Restrict)
+  resolutionMessage   ProcessedMessage? @relation("BreakResolvedBy", fields: [resolutionMessageId], references: [messageId], onDelete: Restrict, onUpdate: Restrict)
+
+  @@index([programId, openedAt(sort: Desc)])
+  @@map("program_break")
+}
+
+model Reservation {
+  id                     String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  programId              String               @map("program_id") @db.Uuid
+  invoiceId              String               @unique @map("invoice_id")
+  originalAmount         Decimal              @map("original_amount") @db.Decimal(20, 4)
+  originalCurrency       String               @map("original_currency") @db.Char(3)
+  fxRate                 Decimal              @map("fx_rate") @db.Decimal(20, 10)
+  fxRateId               String?              @map("fx_rate_id") @db.Uuid
+  fxRateSource           FxRate?              @relation(fields: [fxRateId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  amount                 Decimal              @db.Decimal(20, 4)
+  releasedAmount         Decimal              @default(0) @map("released_amount") @db.Decimal(20, 4)
+  releasedOriginalAmount Decimal              @default(0) @map("released_original_amount") @db.Decimal(20, 4)
+  status                 ReservationStatus    @default(ACTIVE)
+  dueDate                DateTime             @map("due_date") @db.Date
+  fundedAt               DateTime?            @map("funded_at") @db.Timestamptz(3)
+  fundingRef             String?              @unique @map("funding_ref")
+  createdBy              String               @map("created_by")
+  correlationId          String               @map("correlation_id")
+  program                Program              @relation(fields: [programId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  releases               ReservationRelease[]
+  ledger                 CapacityLedger[]
+  createdAt              DateTime             @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt              DateTime             @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@index([programId, status, createdAt(sort: Desc), id(sort: Desc)])
+  @@map("reservation")
+}
+
+model ReservationRelease {
+  id                  String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  reservationId       String           @map("reservation_id") @db.Uuid
+  reason              ReleaseReason
+  externalRef         String           @map("external_ref")
+  paymentId           String?          @map("payment_id")
+  paymentAmount       Decimal?         @map("payment_amount") @db.Decimal(20, 4)
+  paymentCurrency     String?          @map("payment_currency") @db.Char(3)
+  paymentFxRate       Decimal?         @map("payment_fx_rate") @db.Decimal(20, 10)
+  paymentFxRateId     String?          @map("payment_fx_rate_id") @db.Uuid
+  paymentFxRateSource FxRate?          @relation(fields: [paymentFxRateId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  originalAmount      Decimal          @map("original_amount") @db.Decimal(20, 4)
+  amount              Decimal          @db.Decimal(20, 4)
+  messageId           String           @unique @map("message_id")
+  message             ProcessedMessage @relation(fields: [messageId], references: [messageId], onDelete: Restrict, onUpdate: Restrict)
+  reservation         Reservation      @relation(fields: [reservationId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  ledger              CapacityLedger[]
+  createdAt           DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@unique([reservationId, externalRef])
+  @@map("reservation_release")
+}
+
+model CapacityLedger {
+  id                    BigInt              @id @default(autoincrement())
+  programId             String              @map("program_id") @db.Uuid
+  type                  LedgerEntryType
+  reservedDelta         Decimal             @default(0) @map("reserved_delta") @db.Decimal(20, 4)
+  externalUtilizedDelta Decimal             @default(0) @map("external_utilized_delta") @db.Decimal(20, 4)
+  creditLimitDelta      Decimal             @default(0) @map("credit_limit_delta") @db.Decimal(20, 4)
+  creditLimitAfter      Decimal             @map("credit_limit_after") @db.Decimal(20, 4)
+  externalUtilizedAfter Decimal             @map("external_utilized_after") @db.Decimal(20, 4)
+  reservedAfter         Decimal             @map("reserved_after") @db.Decimal(20, 4)
+  reservationId         String?             @map("reservation_id") @db.Uuid
+  releaseId             String?             @map("release_id") @db.Uuid
+  messageId             String?             @map("message_id")
+  program               Program             @relation(fields: [programId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  reservation           Reservation?        @relation(fields: [reservationId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  release               ReservationRelease? @relation(fields: [releaseId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  message               ProcessedMessage?   @relation(fields: [messageId], references: [messageId], onDelete: Restrict, onUpdate: Restrict)
+  createdAt             DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([programId, id])
+  @@index([reservationId])
+  @@map("capacity_ledger")
+}
+
+model FxRate {
+  id           String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  externalId   String               @unique @map("external_id")
+  fromCurrency String               @map("from_currency") @db.Char(3)
+  toCurrency   String               @map("to_currency") @db.Char(3)
+  rateType     FxRateType           @map("rate_type")
+  version      BigInt
+  rate         Decimal?             @db.Decimal(20, 10)
+  status       FxRateStatus
+  asOf         DateTime             @map("as_of") @db.Timestamptz(3)
+  messageId    String               @unique @map("message_id")
+  message      ProcessedMessage     @relation(fields: [messageId], references: [messageId], onDelete: Restrict, onUpdate: Restrict)
+  reservations Reservation[]
+  releases     ReservationRelease[]
+  receivedAt   DateTime             @default(now()) @map("received_at") @db.Timestamptz(3)
+
+  @@unique([fromCurrency, toCurrency, rateType, version])
+  @@map("fx_rate")
+}
+
+model ProcessedMessage {
+  messageId      String                @id @map("message_id")
+  type           InboundMessageType
+  outcome        InboundMessageOutcome
+  reason         String?
+  programId      String?               @map("program_id") @db.Uuid
+  batchId        String?               @map("batch_id")
+  version        BigInt?
+  asOf           DateTime              @map("as_of") @db.Timestamptz(3)
+  topic          String
+  partition      Int
+  offset         BigInt
+  program        Program?              @relation(fields: [programId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  ledger         CapacityLedger[]
+  fxRates        FxRate[]
+  release        ReservationRelease?
+  breaksOpened   ProgramBreak[]        @relation("BreakOpenedBy")
+  breaksResolved ProgramBreak[]        @relation("BreakResolvedBy")
+  processedAt    DateTime              @default(now()) @map("processed_at") @db.Timestamptz(3)
+
+  @@index([batchId])
+  @@map("processed_message")
+}
+
+model OutboxEvent {
+  id          BigInt            @id @default(autoincrement())
+  eventId     String            @unique @default(dbgenerated("gen_random_uuid()")) @map("event_id") @db.Uuid
+  type        OutboundEventType
+  programId   String            @map("program_id") @db.Uuid
+  payload     Json
+  program     Program           @relation(fields: [programId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  createdAt   DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
+  publishedAt DateTime?         @map("published_at") @db.Timestamptz(3)
+
+  @@map("outbox_event")
+}
+
+model IdempotencyRecord {
+  clientId       String   @map("client_id")
+  key            String
+  requestHash    String   @map("request_hash")
+  responseStatus Int      @map("response_status")
+  responseBody   Json     @map("response_body")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  expiresAt      DateTime @map("expires_at") @db.Timestamptz(3)
+
+  @@id([clientId, key])
+  @@index([expiresAt])
+  @@map("idempotency_record")
+}

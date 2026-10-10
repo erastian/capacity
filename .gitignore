@@ -1,0 +1,14 @@
+node_modules
+# Keep environment variables out of version control
+.env
+
+/src/generated/
+/dist/
+/coverage/
+*.tsbuildinfo
+.idea/
+.agents/
+.claude/
+.windsurf/
+skills-lock.json
+docs/
