@@ -6,6 +6,7 @@ import type { IncomingMessage } from 'node:http';
 import { validateEnv, type Env } from './config/env.js';
 import { HealthModule } from './health/health.module.js';
 import { MetricsModule } from './metrics/metrics.module.js';
+import { OutboxModule } from './outbox/outbox.module.js';
 import { ReservationsModule } from './reservations/reservations.module.js';
 import { AuthModule } from './shared/auth/auth.module.js';
 import { PrismaModule } from './shared/db/prisma.module.js';
@@ -70,6 +71,7 @@ import { ProblemFilter } from './shared/errors/problem.filter.js';
     MetricsModule,
     HealthModule,
     ReservationsModule,
+    OutboxModule,
   ],
   providers: [{ provide: APP_FILTER, useClass: ProblemFilter }],
 })

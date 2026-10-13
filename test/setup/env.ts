@@ -9,4 +9,8 @@ Object.assign(process.env, {
   AUTH_ISSUER: ISSUER,
   AUTH_AUDIENCE: AUDIENCE,
   AUTH_JWKS_URL: JWKS_URL,
+  KAFKA_BROKERS: 'localhost:1',
+  KAFKA_SASL_USERNAME: 'capacity',
+  KAFKA_SASL_PASSWORD: 'unused',
+  OUTBOX_RELAY_ENABLED: 'false',
 });

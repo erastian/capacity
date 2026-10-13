@@ -1,5 +1,6 @@
-import { plainToInstance, Type } from 'class-transformer';
+import { plainToInstance, Transform, Type } from 'class-transformer';
 import {
+  IsBoolean,
   IsIn,
   IsInt,
   IsNotEmpty,
@@ -20,6 +21,12 @@ export const LOG_LEVELS = [
   'debug',
   'trace',
   'silent',
+] as const;
+
+export const SASL_MECHANISMS = [
+  'PLAIN',
+  'SCRAM-SHA-256',
+  'SCRAM-SHA-512',
 ] as const;
 
 export class Env {
@@ -72,6 +79,47 @@ export class Env {
   @IsInt()
   @Min(60)
   IDEMPOTENCY_TTL_SECONDS = 7 * 24 * 60 * 60;
+
+  @IsString()
+  @IsNotEmpty()
+  KAFKA_BROKERS: string;
+
+  @IsString()
+  @IsNotEmpty()
+  KAFKA_CLIENT_ID = 'capacity';
+
+  @IsIn(SASL_MECHANISMS)
+  KAFKA_SASL_MECHANISM: (typeof SASL_MECHANISMS)[number] = 'PLAIN';
+
+  @IsString()
+  @IsNotEmpty()
+  KAFKA_SASL_USERNAME: string;
+
+  @IsString()
+  @IsNotEmpty()
+  KAFKA_SASL_PASSWORD: string;
+
+  @Transform(({ value }) =>
+    value === 'true' ? true : value === 'false' ? false : value,
+  )
+  @IsBoolean()
+  OUTBOX_RELAY_ENABLED = true;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(10)
+  OUTBOX_POLL_INTERVAL_MS = 500;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(1000)
+  OUTBOX_BATCH_SIZE = 100;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(100)
+  OUTBOX_LEADER_RETRY_MS = 5000;
 
   @IsUrl({ require_tld: false, require_protocol: true })
   AUTH_ISSUER: string;

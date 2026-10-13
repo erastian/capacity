@@ -6,6 +6,9 @@ const VALID = {
   AUTH_AUDIENCE: 'capacity-api',
   AUTH_JWKS_URL:
     'http://localhost:8080/realms/capacity/protocol/openid-connect/certs',
+  KAFKA_BROKERS: 'localhost:9092',
+  KAFKA_SASL_USERNAME: 'capacity',
+  KAFKA_SASL_PASSWORD: 'secret',
 };
 
 describe('validateEnv', () => {
@@ -25,6 +28,13 @@ describe('validateEnv', () => {
     });
   });
 
+  it.each([
+    ['false', false],
+    ['true', true],
+  ])('reads OUTBOX_RELAY_ENABLED=%s as %s', (text, flag) => {
+    expect(validateEnv({ ...VALID, OUTBOX_RELAY_ENABLED: text }).OUTBOX_RELAY_ENABLED).toBe(flag);
+  });
+
   it('fails without DATABASE_URL', () => {
     expect(() => validateEnv({})).toThrow(/DATABASE_URL/);
   });
@@ -39,6 +49,8 @@ describe('validateEnv', () => {
     ['AUTH_CLOCK_TOLERANCE_SECONDS', '3600'],
     ['BUSINESS_TIMEZONE', 'Mars/Olympus'],
     ['DB_POOL_SIZE', '0'],
+    ['OUTBOX_RELAY_ENABLED', 'yes'],
+    ['KAFKA_SASL_MECHANISM', 'GSSAPI'],
   ])('fails on invalid %s=%s', (key, value) => {
     expect(() => validateEnv({ ...VALID, [key]: value })).toThrow(key);
   });
