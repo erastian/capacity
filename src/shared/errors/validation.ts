@@ -22,11 +22,9 @@ export function createValidationPipe(): ValidationPipe {
     whitelist: true,
     forbidNonWhitelisted: true,
     exceptionFactory: (errors) =>
-      new AppError(
-        HttpStatus.UNPROCESSABLE_ENTITY,
-        'VALIDATION_FAILED',
-        'Request validation failed',
-        { errors: flatten(errors) },
-      ),
+      new AppError(HttpStatus.UNPROCESSABLE_ENTITY, 'VALIDATION_FAILED', {
+        detail: 'Request validation failed',
+        extensions: { errors: flatten(errors) },
+      }),
   });
 }

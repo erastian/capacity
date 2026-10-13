@@ -9,6 +9,7 @@ import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { collectDefaultMetrics, Registry } from 'prom-client';
 import type { Env } from '../config/env.js';
+import { listenUrls } from '../shared/http/listen-urls.js';
 
 @Injectable()
 export class MetricsServer
@@ -48,7 +49,9 @@ export class MetricsServer
     await new Promise<void>((resolve, reject) => {
       this.server!.once('error', reject).listen(port, '0.0.0.0', resolve);
     });
-    this.logger.log(`Metrics listening on :${this.port}`);
+    this.logger.log(
+      `Metrics listening on ${listenUrls(this.port!, '/metrics').join(', ')}`,
+    );
   }
 
   async onApplicationShutdown(): Promise<void> {

@@ -2,7 +2,9 @@ import { plainToInstance, Type } from 'class-transformer';
 import {
   IsIn,
   IsInt,
+  IsNotEmpty,
   IsString,
+  IsUrl,
   Max,
   Min,
   validateSync,
@@ -40,6 +42,22 @@ export class Env {
 
   @IsString()
   DATABASE_URL: string;
+
+  @IsUrl({ require_tld: false, require_protocol: true })
+  AUTH_ISSUER: string;
+
+  @IsString()
+  @IsNotEmpty()
+  AUTH_AUDIENCE: string;
+
+  @IsUrl({ require_tld: false, require_protocol: true })
+  AUTH_JWKS_URL: string;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(300)
+  AUTH_CLOCK_TOLERANCE_SECONDS = 30;
 }
 
 export function validateEnv(raw: Record<string, unknown>): Env {

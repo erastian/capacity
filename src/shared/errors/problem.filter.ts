@@ -46,6 +46,10 @@ export class ProblemFilter implements ExceptionFilter {
       this.logger.error(exception);
     }
 
+    if (exception instanceof AppError) {
+      void reply.headers(exception.headers);
+    }
+
     void reply
       .status(problem.status)
       .type('application/problem+json')
