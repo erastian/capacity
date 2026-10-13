@@ -1,12 +1,10 @@
-import { NestFactory } from '@nestjs/core';
-import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify';
-import { AppModule } from './app.module.js';
+import { Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { createApp } from './app.factory.js';
+import type { Env } from './config/env.js';
 
-async function bootstrap() {
-  const app = await NestFactory.create<NestFastifyApplication>(
-    AppModule,
-    new FastifyAdapter(),
-  );
-  await app.listen(process.env.PORT ?? 3000);
-}
-await bootstrap();
+const app = await createApp();
+const config = app.get<ConfigService<Env, true>>(ConfigService);
+const port = config.get('PORT', { infer: true });
+await app.listen(port, '0.0.0.0');
+new Logger('Bootstrap').log(`API listening on :${port}`);
