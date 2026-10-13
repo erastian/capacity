@@ -10,15 +10,10 @@ import {
 import { randomUUID } from 'node:crypto';
 import { closeDb, db, seedProgram, unique } from '../support/db.js';
 import { token } from '../support/issuer.js';
-import { KAFKA_USERS, type StartedKafka, startKafka } from '../support/kafka.js';
+import { KAFKA_USERS, startKafka } from '../support/kafka.js';
+import type { ReceivedMessage as Received, StartedKafka } from '../support/support.types.js';
 
 const ORIGINATION = { sub: 'svc-origination', azp: 'origination', scope: 'reservations:write programs:read:all' };
-
-interface Received {
-  key: string | null;
-  value: string;
-  headers: Record<string, string>;
-}
 
 describe('with Kafka', () => {
   let kafka: StartedKafka;
@@ -209,6 +204,31 @@ describe('with Kafka', () => {
       const [status] = await collect('capacity.message-status', (m) => json(m).data?.messageId === messageId, 1);
       expect(status.key).toBe(programId);
       expect(json(status).data).toMatchObject({ status: 'ACCP', messageId });
+    });
+
+    it('stores an FX quote from its own topic', async () => {
+      const rateId = unique('R');
+      await producer.send({
+        messages: [
+          {
+            topic: 'treasury.fx-rates',
+            key: 'NOK:EUR:VALUATION',
+            value: JSON.stringify({
+              messageId: unique('m'),
+              type: 'FX_RATE_PUBLISHED',
+              schemaVersion: 1,
+              version: '1',
+              asOf: new Date().toISOString(),
+              payload: { rateId, from: 'NOK', to: 'EUR', rateType: 'VALUATION', status: 'ACTIVE', rate: '0.0861' },
+            }),
+          },
+        ],
+      });
+
+      await waitFor(async () => {
+        const { rows } = await db().query('SELECT rate FROM fx_rate WHERE external_id = $1', [rateId]);
+        return rows[0]?.rate === '0.086100000000000000';
+      });
     });
 
     it('quarantines an unreadable message in the DLQ and moves on', async () => {

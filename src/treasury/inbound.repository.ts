@@ -1,8 +1,10 @@
 import { Injectable } from '@nestjs/common';
+import { Decimal } from 'decimal.js';
 import type { Numeric } from '../shared/db/db.types.js';
 import type { Tx } from '../shared/db/prisma.service.js';
-import { Decimal } from 'decimal.js';
+import type { FxRatePublished } from './adapter/commands.types.js';
 import type { Envelope } from './adapter/envelope.types.js';
+import type { StoredQuote } from './domain/fx-rate-decision.types.js';
 import type {
   Balances,
   BreakSpec,
@@ -12,6 +14,7 @@ import type {
   ProgramView,
 } from './domain/program-decision.types.js';
 import type {
+  FxRateRow,
   InboxRecord,
   KafkaCoordinates,
   Outcome,
@@ -19,6 +22,21 @@ import type {
   ParkedRow,
   ProgramRow,
 } from './inbound.types.js';
+
+const FX_COLUMNS = `external_id, from_currency, to_currency, rate_type::text AS rate_type, version,
+  status::text AS status, rate`;
+
+function toQuote(row: FxRateRow): StoredQuote {
+  return {
+    rateId: row.external_id,
+    from: row.from_currency,
+    to: row.to_currency,
+    rateType: row.rate_type,
+    version: BigInt(row.version.toString()),
+    status: row.status,
+    rate: row.rate === null ? undefined : new Decimal(row.rate.toString()),
+  };
+}
 
 const dec = (value: Numeric) => new Decimal(value.toString());
 const big = (value: Numeric | null) => (value === null ? null : BigInt(value.toString()));
@@ -170,6 +188,52 @@ export class InboundRepository {
         ${record.coordinates.topic}, ${record.coordinates.partition}, ${record.coordinates.offset}
       )
     `;
+  }
+
+  async findQuoteByRateId(tx: Tx, rateId: string): Promise<StoredQuote | undefined> {
+    const rows = await tx.$queryRawUnsafe<FxRateRow[]>(
+      `SELECT ${FX_COLUMNS} FROM fx_rate WHERE external_id = $1`,
+      rateId,
+    );
+    return rows[0] && toQuote(rows[0]);
+  }
+
+  async findQuoteByPairVersion(tx: Tx, quote: FxRatePublished): Promise<StoredQuote | undefined> {
+    const rows = await tx.$queryRawUnsafe<FxRateRow[]>(
+      `SELECT ${FX_COLUMNS} FROM fx_rate
+       WHERE from_currency = $1 AND to_currency = $2 AND rate_type = $3::"FxRateType" AND version = $4`,
+      quote.from,
+      quote.to,
+      quote.rateType,
+      quote.version,
+    );
+    return rows[0] && toQuote(rows[0]);
+  }
+
+  async insertQuote(tx: Tx, quote: FxRatePublished, envelope: Envelope, coordinates: KafkaCoordinates): Promise<void> {
+    await tx.$executeRaw`
+      INSERT INTO fx_rate (external_id, from_currency, to_currency, rate_type, version, rate, status, as_of, kafka_timestamp, message_id)
+      VALUES (
+        ${quote.rateId}, ${quote.from}, ${quote.to}, ${quote.rateType}::"FxRateType", ${quote.version},
+        ${quote.rate?.toString() ?? null}::numeric, ${quote.status}::"FxRateStatus", ${envelope.asOf},
+        ${coordinates.timestamp}, ${envelope.messageId}
+      )
+    `;
+  }
+
+  async quoteExists(tx: Tx, rateId: string): Promise<boolean> {
+    const rows = await tx.$queryRaw<{ exists: boolean }[]>`
+      SELECT EXISTS (SELECT 1 FROM fx_rate WHERE external_id = ${rateId}) AS exists
+    `;
+    return rows[0]?.exists ?? false;
+  }
+
+  async programsAwaitingRate(tx: Tx, rateId: string): Promise<string[]> {
+    const rows = await tx.$queryRaw<{ program_external_id: string }[]>`
+      SELECT DISTINCT program_external_id FROM parked_message
+      WHERE resolved_at IS NULL AND awaiting_kind = 'FX_RATE' AND awaiting_ref = ${rateId}
+    `;
+    return rows.map((row) => row.program_external_id);
   }
 
   async markResolved(tx: Tx, messageId: string): Promise<void> {

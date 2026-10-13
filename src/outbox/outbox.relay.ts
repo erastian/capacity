@@ -127,7 +127,7 @@ export class OutboxRelay implements OnApplicationBootstrap, OnApplicationShutdow
       `SELECT id::text, event_id::text, type::text, partition_key, payload
        FROM outbox_event
        WHERE published_at IS NULL
-       ORDER BY id
+       ORDER BY outbox_event.id
        LIMIT $1`,
       [this.batchSize],
     );

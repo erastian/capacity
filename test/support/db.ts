@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import pg from 'pg';
 import { inject } from 'vitest';
+import type { ProgramSeed, RateSeed } from './support.types.js';
 
 let pool: pg.Pool | undefined;
 
@@ -15,15 +16,6 @@ export async function closeDb(): Promise<void> {
 }
 
 export const unique = (prefix: string) => `${prefix}-${randomUUID().slice(0, 8)}`;
-
-export interface ProgramSeed {
-  currency?: string;
-  creditLimit?: string;
-  externalUtilized?: string;
-  status?: 'ACTIVE' | 'SUSPENDED' | 'CLOSED';
-  clientRef?: string;
-  openBlockingBreaks?: number;
-}
 
 export async function seedProgram(seed: ProgramSeed = {}): Promise<string> {
   const externalId = unique('P');
@@ -44,14 +36,6 @@ export async function seedProgram(seed: ProgramSeed = {}): Promise<string> {
 }
 
 let rateVersion = Date.now() * 1000;
-
-export interface RateSeed {
-  from: string;
-  to: string;
-  rate?: string;
-  status?: 'ACTIVE' | 'SUSPENDED';
-  ageSeconds?: number;
-}
 
 export async function seedRate(seed: RateSeed): Promise<string> {
   const rateId = unique('R');

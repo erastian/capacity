@@ -6,10 +6,11 @@ import { type Tx, PrismaService } from '../shared/db/prisma.service.js';
 import { CAPACITY_SCALE, formatAmount } from '../shared/money/money.js';
 import { Clock } from '../shared/time/clock.js';
 import { toCommand } from './adapter/commands.js';
-import type { ProgramCommand } from './adapter/commands.types.js';
+import type { FxRatePublished, ProgramCommand } from './adapter/commands.types.js';
 import { parseEnvelope } from './adapter/envelope.js';
 import type { RawMessage } from './adapter/envelope.types.js';
 import { DeadLetterPublisher } from './dead-letter.js';
+import { decideFxRate } from './domain/fx-rate-decision.js';
 import { decideProgramCommand, overLimit } from './domain/program-decision.js';
 import type { Balances, ProgramPlan, ProgramView } from './domain/program-decision.types.js';
 import { InboundMetrics } from './inbound.metrics.js';
@@ -72,6 +73,12 @@ export class InboundProcessor {
       this.metrics.deadLettered(decision.deadLetter);
     }
     if (decision.wake) await this.resolveParked(decision.wake);
+    if (decision.wakeRate) await this.resolveAwaitingRate(decision.wakeRate);
+  }
+
+  async resolveAwaitingRate(rateId: string): Promise<void> {
+    const programs = await this.prisma.inTransaction((tx) => this.repository.programsAwaitingRate(tx, rateId));
+    for (const programExternalId of programs) await this.resolveParked(programExternalId);
   }
 
   async resolveParked(programExternalId: string): Promise<void> {
@@ -80,7 +87,10 @@ export class InboundProcessor {
         const program = await this.repository.lockProgram(tx, programExternalId);
         if (!program) return false;
         const parked = await this.repository.nextUnresolvedParked(tx, programExternalId);
-        if (!parked || parked.awaitingKind === 'FX_RATE') return false;
+        if (!parked) return false;
+        if (parked.awaitingKind === 'FX_RATE' && !(await this.repository.quoteExists(tx, parked.awaitingRef))) {
+          return false;
+        }
 
         await this.decide(tx, {
           envelope: parked.envelope,
@@ -127,6 +137,8 @@ export class InboundProcessor {
     }
 
     const command = result.command;
+    if (command.type === 'FX_RATE_PUBLISHED') return this.applyRate(tx, context, command);
+
     const creating = !program && command.type === 'PROGRAM_SNAPSHOT';
     if (!context.fromParked && !creating) {
       const predecessor = await this.repository.lastUnresolvedParked(tx, command.programId);
@@ -135,6 +147,40 @@ export class InboundProcessor {
     if (!program && !creating) return this.park(tx, context, command, program, 'PROGRAM', command.programId);
 
     return this.apply(tx, context, command, program, decideProgramCommand(command, program));
+  }
+
+  private async applyRate(tx: Tx, context: Context, quote: FxRatePublished): Promise<Decision> {
+    const plan = decideFxRate(
+      quote,
+      await this.repository.findQuoteByRateId(tx, quote.rateId),
+      await this.repository.findQuoteByPairVersion(tx, quote),
+    );
+    this.metrics.decided(quote.type, plan.outcome);
+
+    await this.repository.insertInbox(tx, context.envelope, context.coordinates, {
+      type: quote.type,
+      outcome: plan.outcome,
+      reason: plan.outcome === 'REJECTED' ? plan.reason : null,
+      programId: null,
+      programExternalId: null,
+    });
+
+    if (plan.outcome === 'REJECTED') {
+      this.logger.warn(
+        `FX_RATE_CONFLICT: ${quote.rateId} (${quote.from}/${quote.to} ${quote.rateType} v${quote.version}) conflicts with ${plan.conflictsWith}`,
+      );
+      await this.status(tx, context, undefined, 'RJCT', {
+        reason: plan.reason,
+        references: { conflictsWith: plan.conflictsWith },
+      });
+      return {};
+    }
+
+    if (plan.outcome === 'APPLIED') {
+      await this.repository.insertQuote(tx, quote, context.envelope, context.coordinates);
+    }
+    await this.status(tx, context, undefined, 'ACCP');
+    return plan.outcome === 'APPLIED' ? { wakeRate: quote.rateId } : {};
   }
 
   private async answerDuplicate(tx: Tx, context: Context, program: ProgramView | undefined): Promise<Decision | undefined> {

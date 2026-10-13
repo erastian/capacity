@@ -1,6 +1,7 @@
-import { exportJWK, generateKeyPair, type JWTPayload, SignJWT } from 'jose';
+import { exportJWK, generateKeyPair, SignJWT } from 'jose';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
+import type { TokenOptions } from './support.types.js';
 
 export const ISSUER = 'https://idp.test/realms/capacity';
 export const AUDIENCE = 'capacity-api';
@@ -19,14 +20,6 @@ await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
 server.unref();
 
 export const JWKS_URL = `http://127.0.0.1:${(server.address() as AddressInfo).port}/certs`;
-
-export interface TokenOptions {
-  claims?: JWTPayload & Record<string, unknown>;
-  issuer?: string;
-  audience?: string;
-  expiresIn?: string | number;
-  foreignKey?: boolean;
-}
 
 export async function token(options: TokenOptions = {}): Promise<string> {
   const { claims = {}, issuer = ISSUER, audience = AUDIENCE, expiresIn = '5m' } = options;

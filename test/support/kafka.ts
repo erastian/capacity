@@ -1,6 +1,7 @@
 import { createServer } from 'node:net';
 import { resolve } from 'node:path';
-import { GenericContainer, type StartedTestContainer, Wait } from 'testcontainers';
+import { GenericContainer, Wait } from 'testcontainers';
+import type { StartedKafka } from './support.types.js';
 
 const IMAGE = 'apache/kafka:4.3.1';
 
@@ -13,12 +14,6 @@ async function freePort(): Promise<number> {
       server.close(() => resolvePort(port));
     });
   });
-}
-
-export interface StartedKafka {
-  container: StartedTestContainer;
-  brokers: string;
-  stop(): Promise<void>;
 }
 
 export const KAFKA_USERS = {

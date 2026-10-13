@@ -1,32 +1,14 @@
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { EventPublisher } from '../../src/outbox/event-publisher.js';
-import type { OutgoingMessage } from '../../src/outbox/outbox.types.js';
 import type { RawMessage } from '../../src/treasury/adapter/envelope.types.js';
 import { InboundProcessor } from '../../src/treasury/inbound.processor.js';
 import { startApp } from '../support/app.js';
+import { CapturingPublisher } from '../support/capturing-publisher.js';
 import { closeDb, db, unique } from '../support/db.js';
 import { token } from '../support/issuer.js';
-
-class CapturingPublisher extends EventPublisher {
-  readonly sent: OutgoingMessage[] = [];
-  async publish(messages: OutgoingMessage[]): Promise<void> {
-    this.sent.push(...messages);
-  }
-  async close(): Promise<void> {}
-}
+import type { ProgramMessageInput as MessageInput } from '../support/support.types.js';
 
 let offset = 0n;
-
-interface MessageInput {
-  type: string;
-  programId?: string;
-  version?: number | string;
-  payload?: Record<string, unknown>;
-  messageId?: string;
-  asOf?: string;
-  brokerTime?: Date;
-  schemaVersion?: number;
-}
 
 function raw(input: MessageInput | string, key?: string): RawMessage & { messageId: string } {
   const messageId = typeof input === 'string' ? unique('bad') : (input.messageId ?? unique('m'));

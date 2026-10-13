@@ -46,13 +46,14 @@ export class TreasuryConsumer implements OnApplicationBootstrap, OnApplicationSh
   async onApplicationBootstrap(): Promise<void> {
     if (!this.consumer) return;
     await this.processor.resolveAllParked();
+    const topics = [Topic.ProgramCapacity, Topic.FxRates];
     this.stream = await this.consumer.consume({
-      topics: [Topic.ProgramCapacity],
+      topics,
       mode: MessagesStreamModes.COMMITTED,
       fallbackMode: MessagesStreamFallbackModes.EARLIEST,
     });
     this.loop = this.run(this.stream);
-    this.logger.log(`Consuming ${Topic.ProgramCapacity}`);
+    this.logger.log(`Consuming ${topics.join(', ')}`);
   }
 
   async onApplicationShutdown(): Promise<void> {

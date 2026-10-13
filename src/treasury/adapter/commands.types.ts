@@ -59,7 +59,24 @@ export type ProgramCommand =
   | ProgramStatusChanged
   | ProgramReinstated;
 
+export type FxRateType = 'VALUATION' | 'CONVERSION';
+
+export type FxRateStatus = 'ACTIVE' | 'SUSPENDED';
+
+export interface FxRatePublished {
+  type: 'FX_RATE_PUBLISHED';
+  rateId: string;
+  from: string;
+  to: string;
+  rateType: FxRateType;
+  version: bigint;
+  status: FxRateStatus;
+  rate?: Decimal;
+}
+
+export type Command = ProgramCommand | FxRatePublished;
+
 export type CommandResult =
-  | { kind: 'command'; command: ProgramCommand }
+  | { kind: 'command'; command: Command }
   | { kind: 'unsupported' }
   | { kind: 'invalid'; reason: string };

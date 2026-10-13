@@ -5,16 +5,7 @@ import {
 import { execFileSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import type { TestProject } from 'vitest/node';
-
-declare module 'vitest' {
-  export interface ProvidedContext {
-    databaseUrls: {
-      app: string;
-      maintenance: string;
-      migrator: string;
-    };
-  }
-}
+import './vitest.types.js';
 
 const PASSWORDS = {
   CAPACITY_MIGRATOR_PASSWORD: 'capacity_migrator',

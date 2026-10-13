@@ -85,6 +85,40 @@ describe('toCommand', () => {
     expect(toCommand(parse(value)).kind).toBe('unsupported');
   });
 
+  describe('FX_RATE_PUBLISHED', () => {
+    const quote = (payload: Record<string, unknown>) =>
+      envelope({
+        type: 'FX_RATE_PUBLISHED',
+        programId: undefined,
+        version: 3,
+        payload: { rateId: 'R-1', from: 'USD', to: 'EUR', rateType: 'VALUATION', status: 'ACTIVE', rate: '0.000012103412345678', ...payload },
+      });
+
+    it('keeps the rate exactly with 18 decimals', () => {
+      const result = toCommand(parse(quote({})));
+      if (result.kind !== 'command' || result.command.type !== 'FX_RATE_PUBLISHED') throw new Error('expected a quote');
+      expect(result.command.rate?.toFixed(18)).toBe('0.000012103412345678');
+      expect(result.command.version).toBe(3n);
+    });
+
+    it('accepts a suspension without a rate', () => {
+      expect(toCommand(parse(quote({ status: 'SUSPENDED', rate: undefined }))).kind).toBe('command');
+    });
+
+    it.each<[string, Record<string, unknown>]>([
+      ['19 decimals', { rate: '0.0000121034123456789' }],
+      ['zero rate', { rate: '0' }],
+      ['numeric rate', { rate: 0.92 }],
+      ['active without rate', { rate: undefined }],
+      ['suspended with rate', { status: 'SUSPENDED' }],
+      ['same currencies', { to: 'USD' }],
+      ['unknown rate type', { rateType: 'SPOT' }],
+      ['missing rateId', { rateId: undefined }],
+    ])('rejects %s', (_, payload) => {
+      expect(toCommand(parse(quote(payload))).kind).toBe('invalid');
+    });
+  });
+
   it.each<[string, Record<string, unknown>]>([
     ['missing programId', { programId: undefined }],
     ['missing version', { version: undefined }],

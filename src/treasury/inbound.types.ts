@@ -60,6 +60,17 @@ export interface ParkedRow {
 export interface Decision {
   deadLetter?: string;
   wake?: string;
+  wakeRate?: string;
+}
+
+export interface FxRateRow {
+  external_id: string;
+  from_currency: string;
+  to_currency: string;
+  rate_type: 'VALUATION' | 'CONVERSION';
+  version: Numeric;
+  status: 'ACTIVE' | 'SUSPENDED';
+  rate: Numeric | null;
 }
 
 export interface ProcessingContext {

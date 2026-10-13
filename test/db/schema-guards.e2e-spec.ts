@@ -1,5 +1,6 @@
 import pg from 'pg';
 import { inject } from 'vitest';
+import type { GuardCase as Case } from '../support/support.types.js';
 
 const CHECK = '23514';
 const UNIQUE = '23505';
@@ -25,7 +26,6 @@ const FIXTURES = `
     VALUES ('${RESERVATION}', '${PROGRAM}', 'INV1', 100, 'EUR', 100, current_date + 30, 'origination', 'c1', now());
 `;
 
-type Case = [name: string, sql: string, expected: 'ok' | string];
 
 const APP_CASES: Case[] = [
   ['ok: ledger RESERVE', `INSERT INTO capacity_ledger (program_id, type, reserved_delta, credit_limit_after, external_utilized_after, reserved_after, reservation_id) VALUES ('${PROGRAM}', 'RESERVE', 100, 1000, 0, 100, '${RESERVATION}')`, 'ok'],

@@ -1,14 +1,24 @@
+import { Decimal } from 'decimal.js';
 import type { ProgramStatus } from '../../shared/domain/program.types.js';
 import { isCurrency } from '../../shared/money/currency.js';
-import { Decimal } from 'decimal.js';
-import type { CommandResult, Money, ProgramCommand, VersionedMoney } from './commands.types.js';
+import type {
+  Command,
+  CommandResult,
+  FxRateStatus,
+  FxRateType,
+  Money,
+  VersionedMoney,
+} from './commands.types.js';
 import { isIdentifier, parseVersion } from './envelope.js';
 import type { Envelope } from './envelope.types.js';
 
 export const SUPPORTED_SCHEMA_VERSION = 1;
 
 const AMOUNT = /^(0|[1-9]\d{0,15})(\.\d{1,4})?$/;
+const RATE = /^(0|[1-9]\d{0,19})(\.\d{1,18})?$/;
 const STATUSES: readonly ProgramStatus[] = ['ACTIVE', 'SUSPENDED', 'CLOSED'];
+const RATE_TYPES: readonly FxRateType[] = ['VALUATION', 'CONVERSION'];
+const RATE_STATUSES: readonly FxRateStatus[] = ['ACTIVE', 'SUSPENDED'];
 
 class Invalid extends Error {}
 
@@ -65,7 +75,43 @@ function envelopeVersion(envelope: Envelope): bigint {
   return envelope.version ?? fail('version is missing or invalid');
 }
 
-function build(envelope: Envelope): ProgramCommand | undefined {
+function oneOf<T extends string>(value: unknown, allowed: readonly T[], field: string): T {
+  if (!allowed.includes(value as T)) fail(`${field} must be one of ${allowed.join(', ')}`);
+  return value as T;
+}
+
+function fxRate(envelope: Envelope): Command {
+  const payload = envelope.payload;
+  if (!isIdentifier(payload.rateId)) fail('rateId is missing or invalid');
+  const from = currency(payload.from, 'from');
+  const to = currency(payload.to, 'to');
+  if (from === to) fail('from and to must differ');
+  const rateStatus = oneOf(payload.status, RATE_STATUSES, 'status');
+
+  let rate: Decimal | undefined;
+  if (rateStatus === 'ACTIVE') {
+    if (typeof payload.rate !== 'string' || !RATE.test(payload.rate)) {
+      fail('rate must be a decimal string with at most 18 places');
+    }
+    rate = new Decimal(payload.rate);
+    if (rate.lte(0)) fail('rate must be greater than zero');
+  } else if (payload.rate !== undefined && payload.rate !== null) {
+    fail('a suspended quote carries no rate');
+  }
+
+  return {
+    type: 'FX_RATE_PUBLISHED',
+    rateId: payload.rateId,
+    from,
+    to,
+    rateType: oneOf(payload.rateType, RATE_TYPES, 'rateType'),
+    version: envelopeVersion(envelope),
+    status: rateStatus,
+    rate,
+  };
+}
+
+function build(envelope: Envelope): Command | undefined {
   const payload = envelope.payload;
   switch (envelope.type) {
     case 'PROGRAM_SNAPSHOT': {
@@ -116,6 +162,8 @@ function build(envelope: Envelope): ProgramCommand | undefined {
         amendmentRef: text(payload.amendmentRef, 'amendmentRef', 128),
         version: envelopeVersion(envelope),
       };
+    case 'FX_RATE_PUBLISHED':
+      return fxRate(envelope);
     default:
       return undefined;
   }
