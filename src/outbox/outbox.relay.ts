@@ -8,17 +8,10 @@ import { ConfigService } from '@nestjs/config';
 import pg from 'pg';
 import type { Env } from '../config/env.js';
 import { Topic } from '../shared/kafka/kafka.options.js';
-import { EventPublisher, type OutgoingMessage } from './event-publisher.js';
+import { EventPublisher } from './event-publisher.js';
+import type { OutboxRow, OutgoingMessage } from './outbox.types.js';
 
 const LEADER_LOCK = 'capacity:outbox-relay';
-
-interface OutboxRow {
-  id: string;
-  event_id: string;
-  type: string;
-  partition_key: string;
-  payload: Record<string, unknown>;
-}
 
 export function topicFor(type: string): string {
   return type === 'INBOUND_MESSAGE_STATUS' ? Topic.MessageStatus : Topic.ReservationEvents;

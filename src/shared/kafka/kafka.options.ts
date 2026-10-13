@@ -1,5 +1,6 @@
 import type { ConfigService } from '@nestjs/config';
 import type { Env } from '../../config/env.js';
+import type { KafkaConnection } from './kafka.types.js';
 
 export const Topic = {
   ProgramCapacity: 'treasury.program-capacity',
@@ -8,16 +9,6 @@ export const Topic = {
   MessageStatus: 'capacity.message-status',
   DeadLetter: 'capacity.dlq',
 } as const;
-
-export interface KafkaConnection {
-  clientId: string;
-  bootstrapBrokers: string[];
-  sasl: {
-    mechanism: Env['KAFKA_SASL_MECHANISM'];
-    username: string;
-    password: string;
-  };
-}
 
 export function kafkaConnection(config: ConfigService<Env, true>): KafkaConnection {
   return {

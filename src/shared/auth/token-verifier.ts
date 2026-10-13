@@ -2,7 +2,8 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createRemoteJWKSet, jwtVerify, type JWTVerifyGetKey } from 'jose';
 import type { Env } from '../../config/env.js';
-import { type Principal, toPrincipal } from './principal.js';
+import { toPrincipal } from './principal.js';
+import type { Principal } from './principal.types.js';
 
 const ALGORITHMS = ['RS256', 'PS256', 'ES256'];
 

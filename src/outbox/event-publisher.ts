@@ -1,9 +1,4 @@
-export interface OutgoingMessage {
-  topic: string;
-  key: string;
-  value: string;
-  headers: Record<string, string>;
-}
+import type { OutgoingMessage } from './outbox.types.js';
 
 export abstract class EventPublisher {
   abstract publish(messages: OutgoingMessage[]): Promise<void>;

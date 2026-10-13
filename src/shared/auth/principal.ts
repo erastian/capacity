@@ -1,19 +1,5 @@
+import type { Principal, TokenClaims } from './principal.types.js';
 import { KNOWN_SCOPES, Scope } from './scopes.js';
-
-export interface Principal {
-  subject: string;
-  clientId?: string;
-  scopes: ReadonlySet<Scope>;
-  clientRef?: string;
-}
-
-export interface TokenClaims {
-  sub?: unknown;
-  azp?: unknown;
-  client_id?: unknown;
-  scope?: unknown;
-  client_ref?: unknown;
-}
 
 function text(value: unknown): string | undefined {
   return typeof value === 'string' && value.length > 0 ? value : undefined;

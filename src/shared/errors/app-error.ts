@@ -1,8 +1,4 @@
-export interface AppErrorOptions {
-  detail?: string;
-  extensions?: Record<string, unknown>;
-  headers?: Record<string, string>;
-}
+import type { AppErrorOptions } from './errors.types.js';
 
 export class AppError extends Error {
   readonly detail?: string;

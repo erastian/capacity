@@ -1,0 +1,85 @@
+import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { Counter, Histogram } from 'prom-client';
+import type { Env } from '../config/env.js';
+import { MetricsServer } from '../metrics/metrics.server.js';
+import type { Envelope } from './adapter/envelope.types.js';
+
+@Injectable()
+export class InboundMetrics {
+  private readonly logger = new Logger('TreasuryInbound');
+  private readonly clockSkewToleranceMs: number;
+  private readonly consumerLagMaxMs: number;
+  private readonly lag: Histogram;
+  private readonly skew: Counter;
+  private readonly outcomes: Counter;
+  private readonly deadLetters: Counter;
+  private readonly duplicates: Counter;
+
+  constructor(metrics: MetricsServer, config: ConfigService<Env, true>) {
+    this.clockSkewToleranceMs = config.get('CLOCK_SKEW_TOLERANCE_SECONDS', { infer: true }) * 1000;
+    this.consumerLagMaxMs = config.get('CONSUMER_LAG_MAX_SECONDS', { infer: true }) * 1000;
+    const registers = [metrics.registry];
+    this.lag = new Histogram({
+      name: 'treasury_consumer_lag_seconds',
+      help: 'Time between the broker append and the moment the message was read',
+      labelNames: ['topic'],
+      buckets: [0.05, 0.1, 0.5, 1, 5, 30, 60, 300, 1800, 3600],
+      registers,
+    });
+    this.skew = new Counter({
+      name: 'treasury_clock_skew_total',
+      help: 'Messages whose asOf is ahead of the broker timestamp beyond tolerance',
+      registers,
+    });
+    this.outcomes = new Counter({
+      name: 'treasury_messages_total',
+      help: 'Treasury messages by decision',
+      labelNames: ['type', 'outcome'],
+      registers,
+    });
+    this.deadLetters = new Counter({
+      name: 'treasury_dead_letters_total',
+      help: 'Treasury messages copied to the dead letter topic',
+      labelNames: ['reason'],
+      registers,
+    });
+    this.duplicates = new Counter({
+      name: 'inbox_duplicate_total',
+      help: 'Redelivered treasury messages answered from the inbox or the parked queue',
+      labelNames: ['outcome'],
+      registers,
+    });
+  }
+
+  received(topic: string, brokerTimestamp: Date, readAt: Date): void {
+    const lagMs = readAt.getTime() - brokerTimestamp.getTime();
+    this.lag.observe({ topic }, Math.max(lagMs, 0) / 1000);
+    if (lagMs > this.consumerLagMaxMs) {
+      this.logger.warn(`CONSUMER_LAG: ${topic} is ${Math.round(lagMs / 1000)}s behind`);
+    }
+  }
+
+  checkClock(envelope: Envelope, brokerTimestamp: Date): void {
+    const aheadMs = envelope.asOf.getTime() - brokerTimestamp.getTime();
+    if (aheadMs > this.clockSkewToleranceMs) {
+      this.skew.inc();
+      this.logger.warn(
+        `TREASURY_CLOCK_SKEW: message ${envelope.messageId} asOf is ${Math.round(aheadMs / 1000)}s ahead of the broker`,
+      );
+    }
+  }
+
+  decided(type: string, outcome: string): void {
+    this.outcomes.inc({ type, outcome });
+  }
+
+  deadLettered(reason: string): void {
+    this.deadLetters.inc({ reason });
+    this.logger.warn(`DLQ_MESSAGE: ${reason}`);
+  }
+
+  duplicate(outcome: string): void {
+    this.duplicates.inc({ outcome });
+  }
+}

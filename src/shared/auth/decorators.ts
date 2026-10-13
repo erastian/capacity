@@ -3,7 +3,7 @@ import {
   type ExecutionContext,
   SetMetadata,
 } from '@nestjs/common';
-import type { Principal } from './principal.js';
+import type { Principal } from './principal.types.js';
 import type { Scope } from './scopes.js';
 
 export const PUBLIC_KEY = 'auth:public';

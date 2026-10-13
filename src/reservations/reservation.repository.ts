@@ -1,53 +1,18 @@
 import { Injectable } from '@nestjs/common';
+import type { Numeric } from '../shared/db/db.types.js';
 import type { Tx } from '../shared/db/prisma.service.js';
-import { Decimal } from '../shared/money/money.js';
-import type { FxQuote, ProgramState, ProgramStatus } from './domain/assess.js';
-
-type Numeric = { toString(): string };
+import type { ProgramStatus } from '../shared/domain/program.types.js';
+import { Decimal } from 'decimal.js';
+import type { FxQuote, ProgramState } from './domain/assess.types.js';
+import type {
+  Decline,
+  ExistingReservation,
+  NewReservation,
+  ProgramBalances,
+  StoredResponse,
+} from './reservation.types.js';
 
 const dec = (value: Numeric): Decimal => new Decimal(value.toString());
-
-export interface StoredResponse {
-  requestHash: string;
-  status: number;
-  body: unknown;
-}
-
-export interface ExistingReservation {
-  id: string;
-  status: string;
-  programId: string;
-  invoiceId: string;
-}
-
-export interface NewReservation {
-  programId: string;
-  invoiceId: string;
-  originalAmount: Decimal;
-  originalCurrency: string;
-  fxRateId: string | null;
-  amount: Decimal;
-  dueDate: string;
-  createdBy: string;
-  correlationId: string;
-}
-
-export interface ProgramBalances {
-  creditLimit: Decimal;
-  externalUtilized: Decimal;
-  reserved: Decimal;
-}
-
-export interface Decline {
-  programId: string;
-  invoiceId: string;
-  requestedAmount: Decimal;
-  requestedCurrency: string;
-  code: string;
-  details: Record<string, unknown>;
-  createdBy: string;
-  correlationId: string;
-}
 
 @Injectable()
 export class ReservationRepository {

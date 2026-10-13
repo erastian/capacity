@@ -1,10 +1,6 @@
 import { HttpStatus, ValidationError, ValidationPipe } from '@nestjs/common';
 import { AppError } from './app-error.js';
-
-interface FieldError {
-  field: string;
-  messages: string[];
-}
+import type { FieldError } from './errors.types.js';
 
 function flatten(errors: ValidationError[], parent = ''): FieldError[] {
   return errors.flatMap((error) => {

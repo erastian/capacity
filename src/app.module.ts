@@ -8,6 +8,7 @@ import { HealthModule } from './health/health.module.js';
 import { MetricsModule } from './metrics/metrics.module.js';
 import { OutboxModule } from './outbox/outbox.module.js';
 import { ReservationsModule } from './reservations/reservations.module.js';
+import { TreasuryModule } from './treasury/treasury.module.js';
 import { AuthModule } from './shared/auth/auth.module.js';
 import { PrismaModule } from './shared/db/prisma.module.js';
 import { TimeModule } from './shared/time/time.module.js';
@@ -72,6 +73,7 @@ import { ProblemFilter } from './shared/errors/problem.filter.js';
     HealthModule,
     ReservationsModule,
     OutboxModule,
+    TreasuryModule,
   ],
   providers: [{ provide: APP_FILTER, useClass: ProblemFilter }],
 })

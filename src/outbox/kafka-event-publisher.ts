@@ -3,7 +3,8 @@ import { ConfigService } from '@nestjs/config';
 import { ProduceAcks, Producer, stringSerializers } from '@platformatic/kafka';
 import type { Env } from '../config/env.js';
 import { kafkaConnection } from '../shared/kafka/kafka.options.js';
-import { EventPublisher, type OutgoingMessage } from './event-publisher.js';
+import { EventPublisher } from './event-publisher.js';
+import type { OutgoingMessage } from './outbox.types.js';
 
 @Injectable()
 export class KafkaEventPublisher extends EventPublisher {

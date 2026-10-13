@@ -1,11 +1,6 @@
 import { isCurrency, minorUnits } from './currency.js';
-import {
-  Decimal,
-  exposure,
-  fitsMinorUnits,
-  formatAmount,
-  isDecimalText,
-} from './money.js';
+import { Decimal } from 'decimal.js';
+import { exposure, fitsMinorUnits, formatAmount, isDecimalText } from './money.js';
 
 describe('currencies', () => {
   it.each([

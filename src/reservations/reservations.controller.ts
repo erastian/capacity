@@ -1,7 +1,7 @@
 import { Body, Controller, Headers, HttpStatus, Post, Req, Res } from '@nestjs/common';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { CurrentPrincipal, RequireScopes } from '../shared/auth/decorators.js';
-import type { Principal } from '../shared/auth/principal.js';
+import type { Principal } from '../shared/auth/principal.types.js';
 import { Scope } from '../shared/auth/scopes.js';
 import { AppError } from '../shared/errors/app-error.js';
 import { PROBLEM_CONTENT_TYPE } from '../shared/errors/problem.js';

@@ -1,0 +1,1 @@
+export type Numeric = { toString(): string };

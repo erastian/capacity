@@ -8,7 +8,7 @@ import { Reflector } from '@nestjs/core';
 import type { FastifyRequest } from 'fastify';
 import { AppError } from '../errors/app-error.js';
 import { PUBLIC_KEY, SCOPES_KEY } from './decorators.js';
-import type { Principal } from './principal.js';
+import type { Principal } from './principal.types.js';
 import type { Scope } from './scopes.js';
 import { TokenVerifier } from './token-verifier.js';
 

@@ -1,12 +1,6 @@
-import { Decimal } from '../../shared/money/money.js';
-import {
-  assess,
-  availability,
-  type AssessContext,
-  type FxQuote,
-  type ProgramState,
-  type ReserveInput,
-} from './assess.js';
+import { Decimal } from 'decimal.js';
+import { assess, availability } from './assess.js';
+import type { AssessContext, FxQuote, ProgramState, ReserveInput } from './assess.types.js';
 
 const NOW = new Date('2026-10-13T12:00:00Z');
 const HOUR = 60 * 60 * 1000;

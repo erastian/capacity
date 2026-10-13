@@ -8,7 +8,8 @@ import {
 } from '@nestjs/common';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { AppError } from './app-error.js';
-import { type Problem, problem, PROBLEM_CONTENT_TYPE } from './problem.js';
+import type { Problem } from './errors.types.js';
+import { problem, PROBLEM_CONTENT_TYPE } from './problem.js';
 
 const CODE_BY_STATUS: Record<number, string> = {
   [HttpStatus.BAD_REQUEST]: 'BAD_REQUEST',

@@ -13,4 +13,5 @@ Object.assign(process.env, {
   KAFKA_SASL_USERNAME: 'capacity',
   KAFKA_SASL_PASSWORD: 'unused',
   OUTBOX_RELAY_ENABLED: 'false',
+  TREASURY_CONSUMER_ENABLED: 'false',
 });

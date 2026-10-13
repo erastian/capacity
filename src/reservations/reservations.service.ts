@@ -3,55 +3,31 @@ import { ConfigService } from '@nestjs/config';
 import { createHash } from 'node:crypto';
 import type { Env } from '../config/env.js';
 import { writeOutbox } from '../outbox/outbox.writer.js';
-import type { Principal } from '../shared/auth/principal.js';
 import { canSeeProgram } from '../shared/auth/visibility.js';
 import { type Tx, PrismaService } from '../shared/db/prisma.service.js';
 import { AppError } from '../shared/errors/app-error.js';
 import { problem } from '../shared/errors/problem.js';
 import { isCurrency, minorUnits } from '../shared/money/currency.js';
-import {
-  CAPACITY_SCALE,
-  Decimal,
-  fitsMinorUnits,
-  formatAmount,
-} from '../shared/money/money.js';
+import { Decimal } from 'decimal.js';
+import { CAPACITY_SCALE, fitsMinorUnits, formatAmount } from '../shared/money/money.js';
 import { businessDate, Clock } from '../shared/time/clock.js';
-import {
-  assess,
-  type AssessContext,
-  availability,
-  DECLINE_STATUS,
-  type DeclineCode,
-  type FxQuote,
-  needsFx,
-  type ProgramState,
-  type ReserveInput,
-} from './domain/assess.js';
-import {
-  type ExistingReservation,
-  type ProgramBalances,
-  ReservationRepository,
-} from './reservation.repository.js';
+import { assess, availability, DECLINE_STATUS, needsFx } from './domain/assess.js';
+import type {
+  AssessContext,
+  DeclineCode,
+  FxQuote,
+  ProgramState,
+  ReserveInput,
+} from './domain/assess.types.js';
+import { ReservationRepository } from './reservation.repository.js';
+import type {
+  ExistingReservation,
+  ProgramBalances,
+  ReserveCommand,
+  ReserveOutcome as Outcome,
+  ReserveResult,
+} from './reservation.types.js';
 import type { ReserveRequest } from './reserve.dto.js';
-
-export interface ReserveCommand {
-  principal: Principal;
-  idempotencyKey: string;
-  request: ReserveRequest;
-  correlationId: string;
-  instance: string;
-}
-
-export interface ReserveResult {
-  status: number;
-  body: unknown;
-  replayed: boolean;
-}
-
-interface Outcome {
-  status: number;
-  body: unknown;
-}
 
 const cap = (value: Decimal) => formatAmount(value, CAPACITY_SCALE);
 

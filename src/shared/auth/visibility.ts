@@ -1,4 +1,4 @@
-import type { Principal } from './principal.js';
+import type { Principal } from './principal.types.js';
 import { Scope } from './scopes.js';
 
 export function canSeeProgram(principal: Principal, clientRef: string): boolean {

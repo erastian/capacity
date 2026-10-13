@@ -1,17 +1,5 @@
 import type { Tx } from '../shared/db/prisma.service.js';
-
-export type OutboundEventType =
-  | 'RESERVATION_CREATED'
-  | 'RESERVATION_DECLINED';
-
-export interface OutboundEvent {
-  type: OutboundEventType;
-  programId: string | null;
-  partitionKey: string;
-  correlationId: string;
-  occurredAt: Date;
-  data: Record<string, unknown>;
-}
+import type { OutboundEvent } from './outbox.types.js';
 
 export const OUTBOUND_SCHEMA_VERSION = 1;
 

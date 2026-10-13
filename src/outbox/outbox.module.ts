@@ -5,6 +5,6 @@ import { OutboxRelay } from './outbox.relay.js';
 
 @Module({
   providers: [{ provide: EventPublisher, useClass: KafkaEventPublisher }, OutboxRelay],
-  exports: [OutboxRelay],
+  exports: [OutboxRelay, EventPublisher],
 })
 export class OutboxModule {}

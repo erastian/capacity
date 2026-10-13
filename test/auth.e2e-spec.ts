@@ -2,7 +2,7 @@ import { Controller, Get, Module } from '@nestjs/common';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { AppModule } from '../src/app.module.js';
 import { CurrentPrincipal, RequireScopes } from '../src/shared/auth/decorators.js';
-import type { Principal } from '../src/shared/auth/principal.js';
+import type { Principal } from '../src/shared/auth/principal.types.js';
 import { Scope } from '../src/shared/auth/scopes.js';
 import { startApp } from './support/app.js';
 import { hmacToken, token, unsignedToken } from './support/issuer.js';

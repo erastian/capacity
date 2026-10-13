@@ -1,8 +1,6 @@
 import { Decimal } from 'decimal.js';
 import { minorUnits } from './currency.js';
 
-export { Decimal };
-
 export const CAPACITY_SCALE = 4;
 
 const DECIMAL_TEXT = /^(0|[1-9]\d{0,15})(\.\d{1,18})?$/;

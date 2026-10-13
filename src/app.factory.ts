@@ -13,10 +13,8 @@ import {
   resolveCorrelationId,
 } from './shared/http/correlation-id.js';
 
-export async function createApp(
-  module: Type | DynamicModule = AppModule,
-): Promise<NestFastifyApplication> {
-  const adapter = new FastifyAdapter({
+export function createAdapter(): FastifyAdapter {
+  return new FastifyAdapter({
     requestIdHeader: false,
     genReqId: (req: IncomingMessage) => {
       const id = resolveCorrelationId(req.headers);
@@ -24,13 +22,9 @@ export async function createApp(
       return id;
     },
   });
+}
 
-  const app = await NestFactory.create<NestFastifyApplication>(
-    module,
-    adapter,
-    { bufferLogs: true },
-  );
-
+export function configureApp(app: NestFastifyApplication): NestFastifyApplication {
   app.useLogger(app.get(Logger));
   app.useGlobalPipes(createValidationPipe());
   app.enableShutdownHooks();
@@ -40,6 +34,16 @@ export async function createApp(
     .addHook('onRequest', async (request, reply) => {
       reply.header(CORRELATION_HEADER, request.id);
     });
-
   return app;
+}
+
+export async function createApp(
+  module: Type | DynamicModule = AppModule,
+): Promise<NestFastifyApplication> {
+  const app = await NestFactory.create<NestFastifyApplication>(
+    module,
+    createAdapter(),
+    { bufferLogs: true },
+  );
+  return configureApp(app);
 }

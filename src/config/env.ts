@@ -80,6 +80,32 @@ export class Env {
   @Min(60)
   IDEMPOTENCY_TTL_SECONDS = 7 * 24 * 60 * 60;
 
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  CLOCK_SKEW_TOLERANCE_SECONDS = 5 * 60;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  CONSUMER_LAG_MAX_SECONDS = 5 * 60;
+
+  @Transform(({ value }) =>
+    value === 'true' ? true : value === 'false' ? false : value,
+  )
+  @IsBoolean()
+  PUBLISH_ACCEPTED_STATUS = false;
+
+  @Transform(({ value }) =>
+    value === 'true' ? true : value === 'false' ? false : value,
+  )
+  @IsBoolean()
+  TREASURY_CONSUMER_ENABLED = true;
+
+  @IsString()
+  @IsNotEmpty()
+  TREASURY_CONSUMER_GROUP = 'capacity-treasury';
+
   @IsString()
   @IsNotEmpty()
   KAFKA_BROKERS: string;

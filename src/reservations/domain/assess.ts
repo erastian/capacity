@@ -1,48 +1,14 @@
-import { Decimal, exposure } from '../../shared/money/money.js';
-
-export type ProgramStatus = 'ACTIVE' | 'SUSPENDED' | 'CLOSED';
-
-export interface ProgramState {
-  id: string;
-  externalId: string;
-  clientRef: string;
-  currency: string;
-  creditLimit: Decimal;
-  externalUtilized: Decimal;
-  reserved: Decimal;
-  status: ProgramStatus;
-  openBlockingBreaks: number;
-}
-
-export interface FxQuote {
-  id: string;
-  rateId: string;
-  status: 'ACTIVE' | 'SUSPENDED';
-  rate?: Decimal;
-  effectiveAsOf: Date;
-}
-
-export interface ReserveInput {
-  originalAmount: Decimal;
-  currency: string;
-  dueDate: string;
-}
-
-export interface AssessContext {
-  businessDate: string;
-  now: Date;
-  fxMaxAgeMs: number;
-}
-
-export type DeclineCode =
-  | 'INVOICE_PAST_DUE'
-  | 'PROGRAM_SUSPENDED'
-  | 'PROGRAM_CLOSED'
-  | 'PROGRAM_ON_HOLD'
-  | 'FX_RATE_UNAVAILABLE'
-  | 'FX_RATE_SUSPENDED'
-  | 'FX_RATE_STALE'
-  | 'INSUFFICIENT_CAPACITY';
+import { Decimal } from 'decimal.js';
+import { exposure } from '../../shared/money/money.js';
+import type {
+  AssessContext,
+  Assessment,
+  Availability,
+  DeclineCode,
+  FxQuote,
+  ProgramState,
+  ReserveInput,
+} from './assess.types.js';
 
 export const DECLINE_STATUS: Record<DeclineCode, 409 | 422> = {
   INVOICE_PAST_DUE: 422,
@@ -54,15 +20,6 @@ export const DECLINE_STATUS: Record<DeclineCode, 409 | 422> = {
   FX_RATE_STALE: 422,
   INSUFFICIENT_CAPACITY: 409,
 };
-
-export type Assessment =
-  | { outcome: 'decline'; code: DeclineCode; amount?: Decimal; fx?: FxQuote }
-  | { outcome: 'reserve'; amount: Decimal; fx?: FxQuote };
-
-export interface Availability {
-  available: Decimal;
-  overLimit: Decimal;
-}
 
 export function availability(program: ProgramState): Availability {
   const free = program.creditLimit
