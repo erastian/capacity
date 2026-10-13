@@ -1,7 +1,7 @@
 generator client {
   provider     = "prisma-client"
   output       = "../src/generated/prisma"
-  moduleFormat = "cjs"
+  moduleFormat = "esm"
 }
 
 datasource db {
@@ -20,16 +20,29 @@ enum OutboundEventType {
   RESERVATION_CANCELLED
   PROGRAM_BREAK_OPENED
   PROGRAM_BREAK_RESOLVED
+  RESERVATION_RELEASE_REVERSED
+  RESERVATION_DECLINED
+  PROGRAM_LIMIT_EXCESS_STARTED
+  PROGRAM_LIMIT_EXCESS_ENDED
+  INBOUND_MESSAGE_STATUS
 }
 
 enum BreakReason {
   CURRENCY_MISMATCH
-  SNAPSHOT_VERSION_CONFLICT
+  VERSION_CONFLICT
   OVERPAYMENT
   FX_SETTLED_AMOUNT_MISMATCH
   UNKNOWN_INVOICE
-  CANCELLATION_AFTER_REPAYMENT
+  CANCELLATION_AFTER_SETTLEMENT
   PROGRAM_MISMATCH
+  INVALID_STATUS_TRANSITION
+  UNKNOWN_RELEASE
+  FUNDED_AFTER_CANCELLATION
+  FUNDING_CONFLICT
+  FX_RATE_MISMATCH
+  CANCELLATION_WHILE_FUNDED
+  CLIENT_MISMATCH
+  EXTERNAL_REF_CONFLICT
 }
 
 enum ReservationStatus {
@@ -42,7 +55,8 @@ enum ReservationStatus {
 enum ReleaseReason {
   REPAYMENT
   CANCELLATION
-  CREDIT_NOTE
+  REVERSAL
+  WRITE_OFF
 }
 
 enum FxRateType {
@@ -61,6 +75,7 @@ enum LedgerEntryType {
   TREASURY_LIMIT_UPDATED
   TREASURY_EXTERNAL_UTILIZATION_UPDATED
   TREASURY_SNAPSHOT
+  RELEASE_REVERSAL
 }
 
 enum InboundMessageType {
@@ -72,9 +87,18 @@ enum InboundMessageType {
   INVOICE_FUNDED
   INVOICE_PAYMENT_ALLOCATED
   INVOICE_FUNDING_CANCELLED
-  INVOICE_CREDIT_NOTE_APPLIED
   FX_RATE_PUBLISHED
   BREAK_RESOLVED
+  INVOICE_RELEASE_REVERSED
+  PROGRAM_REINSTATED
+  INVOICE_FUNDING_RETURNED
+  INVOICE_BALANCE_WRITTEN_OFF
+}
+
+enum AwaitingKind {
+  FX_RATE
+  PROGRAM
+  PRECEDING_MESSAGE
 }
 
 enum InboundMessageOutcome {
@@ -84,28 +108,30 @@ enum InboundMessageOutcome {
 }
 
 model Program {
-  id                      String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  externalId              String             @unique @map("external_id")
-  clientRef               String             @map("client_ref")
-  currency                String             @db.Char(3)
-  creditLimit             Decimal            @map("credit_limit") @db.Decimal(20, 4)
-  externalUtilized        Decimal            @default(0) @map("external_utilized") @db.Decimal(20, 4)
-  reserved                Decimal            @default(0) @db.Decimal(20, 4)
-  status                  ProgramStatus      @default(ACTIVE)
-  statusReason            String?            @map("status_reason")
-  statusChangedAt         DateTime?          @map("status_changed_at") @db.Timestamptz(3)
-  statusVersion           BigInt?            @map("status_version")
-  creditLimitVersion      BigInt?            @map("credit_limit_version")
-  externalUtilizedVersion BigInt?            @map("external_utilized_version")
-  openBlockingBreaks      Int                @default(0) @map("open_blocking_breaks")
-  treasurySyncedAt        DateTime?          @map("treasury_synced_at") @db.Timestamptz(3)
+  id                      String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  externalId              String               @unique @map("external_id")
+  clientRef               String               @map("client_ref")
+  currency                String               @db.Char(3)
+  creditLimit             Decimal              @map("credit_limit") @db.Decimal(20, 4)
+  externalUtilized        Decimal              @default(0) @map("external_utilized") @db.Decimal(20, 4)
+  reserved                Decimal              @default(0) @db.Decimal(20, 4)
+  status                  ProgramStatus        @default(ACTIVE)
+  statusReason            String?              @map("status_reason")
+  statusChangedAt         DateTime?            @map("status_changed_at") @db.Timestamptz(3)
+  statusVersion           BigInt?              @map("status_version")
+  creditLimitVersion      BigInt?              @map("credit_limit_version")
+  externalUtilizedVersion BigInt?              @map("external_utilized_version")
+  openBlockingBreaks      Int                  @default(0) @map("open_blocking_breaks")
+  treasurySyncedAt        DateTime?            @map("treasury_synced_at") @db.Timestamptz(3)
   reservations            Reservation[]
   breaks                  ProgramBreak[]
+  parkedMessages          ParkedMessage[]
+  declines                ReservationDecline[]
   ledger                  CapacityLedger[]
   inboundMessages         ProcessedMessage[]
   outboxEvents            OutboxEvent[]
-  createdAt               DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt               DateTime           @updatedAt @map("updated_at") @db.Timestamptz(3)
+  createdAt               DateTime             @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt               DateTime             @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   @@index([clientRef])
   @@map("program")
@@ -113,7 +139,9 @@ model Program {
 
 model ProgramBreak {
   id                  String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  programId           String            @map("program_id") @db.Uuid
+  programId           String?           @map("program_id") @db.Uuid
+  programExternalId   String?           @map("program_external_id")
+  reservationId       String?           @map("reservation_id") @db.Uuid
   reason              BreakReason
   blocking            Boolean
   messageId           String            @map("message_id")
@@ -121,11 +149,14 @@ model ProgramBreak {
   openedAt            DateTime          @default(now()) @map("opened_at") @db.Timestamptz(3)
   resolvedAt          DateTime?         @map("resolved_at") @db.Timestamptz(3)
   resolutionMessageId String?           @map("resolution_message_id")
-  program             Program           @relation(fields: [programId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  program             Program?          @relation(fields: [programId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  reservation         Reservation?      @relation(fields: [reservationId], references: [id], onDelete: Restrict, onUpdate: Restrict)
   message             ProcessedMessage  @relation("BreakOpenedBy", fields: [messageId], references: [messageId], onDelete: Restrict, onUpdate: Restrict)
   resolutionMessage   ProcessedMessage? @relation("BreakResolvedBy", fields: [resolutionMessageId], references: [messageId], onDelete: Restrict, onUpdate: Restrict)
 
   @@index([programId, openedAt(sort: Desc)])
+  @@index([reservationId])
+  @@index([programExternalId])
   @@map("program_break")
 }
 
@@ -135,7 +166,6 @@ model Reservation {
   invoiceId              String               @unique @map("invoice_id")
   originalAmount         Decimal              @map("original_amount") @db.Decimal(20, 4)
   originalCurrency       String               @map("original_currency") @db.Char(3)
-  fxRate                 Decimal              @map("fx_rate") @db.Decimal(20, 10)
   fxRateId               String?              @map("fx_rate_id") @db.Uuid
   fxRateSource           FxRate?              @relation(fields: [fxRateId], references: [id], onDelete: Restrict, onUpdate: Restrict)
   amount                 Decimal              @db.Decimal(20, 4)
@@ -149,32 +179,55 @@ model Reservation {
   correlationId          String               @map("correlation_id")
   program                Program              @relation(fields: [programId], references: [id], onDelete: Restrict, onUpdate: Restrict)
   releases               ReservationRelease[]
+  fundings               ReservationFunding[]
   ledger                 CapacityLedger[]
+  parkedMessages         ParkedMessage[]
+  breaks                 ProgramBreak[]
   createdAt              DateTime             @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt              DateTime             @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  @@index([programId, status, createdAt(sort: Desc), id(sort: Desc)])
   @@map("reservation")
 }
 
+model ReservationFunding {
+  id              String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  reservationId   String            @map("reservation_id") @db.Uuid
+  fundingRef      String            @unique @map("funding_ref")
+  fundedAt        DateTime          @map("funded_at") @db.Timestamptz(3)
+  messageId       String            @unique @map("message_id")
+  returnedAt      DateTime?         @map("returned_at") @db.Timestamptz(3)
+  returnMessageId String?           @unique @map("return_message_id")
+  reservation     Reservation       @relation(fields: [reservationId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  message         ProcessedMessage  @relation("FundingMessage", fields: [messageId], references: [messageId], onDelete: Restrict, onUpdate: Restrict)
+  returnMessage   ProcessedMessage? @relation("FundingReturnMessage", fields: [returnMessageId], references: [messageId], onDelete: Restrict, onUpdate: Restrict)
+  createdAt       DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([reservationId])
+  @@map("reservation_funding")
+}
+
 model ReservationRelease {
-  id                  String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  reservationId       String           @map("reservation_id") @db.Uuid
+  id                  String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  reservationId       String              @map("reservation_id") @db.Uuid
   reason              ReleaseReason
-  externalRef         String           @map("external_ref")
-  paymentId           String?          @map("payment_id")
-  paymentAmount       Decimal?         @map("payment_amount") @db.Decimal(20, 4)
-  paymentCurrency     String?          @map("payment_currency") @db.Char(3)
-  paymentFxRate       Decimal?         @map("payment_fx_rate") @db.Decimal(20, 10)
-  paymentFxRateId     String?          @map("payment_fx_rate_id") @db.Uuid
-  paymentFxRateSource FxRate?          @relation(fields: [paymentFxRateId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  originalAmount      Decimal          @map("original_amount") @db.Decimal(20, 4)
-  amount              Decimal          @db.Decimal(20, 4)
-  messageId           String           @unique @map("message_id")
-  message             ProcessedMessage @relation(fields: [messageId], references: [messageId], onDelete: Restrict, onUpdate: Restrict)
-  reservation         Reservation      @relation(fields: [reservationId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  externalRef         String              @map("external_ref")
+  paymentId           String?             @map("payment_id")
+  paymentAmount       Decimal?            @map("payment_amount") @db.Decimal(20, 4)
+  paymentCurrency     String?             @map("payment_currency") @db.Char(3)
+  paymentFxRateId     String?             @map("payment_fx_rate_id") @db.Uuid
+  paymentFxRateSource FxRate?             @relation(fields: [paymentFxRateId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  cancellationReason  String?             @map("cancellation_reason")
+  writeOffReason      String?             @map("write_off_reason")
+  originalAmount      Decimal             @map("original_amount") @db.Decimal(20, 4)
+  amount              Decimal             @db.Decimal(20, 4)
+  reversesReleaseId   String?             @unique @map("reverses_release_id") @db.Uuid
+  reverses            ReservationRelease? @relation("ReleaseReversal", fields: [reversesReleaseId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  reversedBy          ReservationRelease? @relation("ReleaseReversal")
+  messageId           String              @unique @map("message_id")
+  message             ProcessedMessage    @relation(fields: [messageId], references: [messageId], onDelete: Restrict, onUpdate: Restrict)
+  reservation         Reservation         @relation(fields: [reservationId], references: [id], onDelete: Restrict, onUpdate: Restrict)
   ledger              CapacityLedger[]
-  createdAt           DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+  createdAt           DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
 
   @@unique([reservationId, externalRef])
   @@map("reservation_release")
@@ -205,20 +258,21 @@ model CapacityLedger {
 }
 
 model FxRate {
-  id           String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  externalId   String               @unique @map("external_id")
-  fromCurrency String               @map("from_currency") @db.Char(3)
-  toCurrency   String               @map("to_currency") @db.Char(3)
-  rateType     FxRateType           @map("rate_type")
-  version      BigInt
-  rate         Decimal?             @db.Decimal(20, 10)
-  status       FxRateStatus
-  asOf         DateTime             @map("as_of") @db.Timestamptz(3)
-  messageId    String               @unique @map("message_id")
-  message      ProcessedMessage     @relation(fields: [messageId], references: [messageId], onDelete: Restrict, onUpdate: Restrict)
-  reservations Reservation[]
-  releases     ReservationRelease[]
-  receivedAt   DateTime             @default(now()) @map("received_at") @db.Timestamptz(3)
+  id             String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  externalId     String               @unique @map("external_id")
+  fromCurrency   String               @map("from_currency") @db.Char(3)
+  toCurrency     String               @map("to_currency") @db.Char(3)
+  rateType       FxRateType           @map("rate_type")
+  version        BigInt
+  rate           Decimal?             @db.Decimal(38, 18)
+  status         FxRateStatus
+  asOf           DateTime             @map("as_of") @db.Timestamptz(3)
+  kafkaTimestamp DateTime             @map("kafka_timestamp") @db.Timestamptz(3)
+  messageId      String               @unique @map("message_id")
+  message        ProcessedMessage     @relation(fields: [messageId], references: [messageId], onDelete: Restrict, onUpdate: Restrict)
+  reservations   Reservation[]
+  releases       ReservationRelease[]
+  receivedAt     DateTime             @default(now()) @map("received_at") @db.Timestamptz(3)
 
   @@unique([fromCurrency, toCurrency, rateType, version])
   @@map("fx_rate")
@@ -226,13 +280,15 @@ model FxRate {
 
 model ProcessedMessage {
   messageId      String                @id @map("message_id")
-  type           InboundMessageType
+  type           InboundMessageType?
   outcome        InboundMessageOutcome
   reason         String?
   programId      String?               @map("program_id") @db.Uuid
+  programExternalId String?            @map("program_external_id")
   batchId        String?               @map("batch_id")
   version        BigInt?
   asOf           DateTime              @map("as_of") @db.Timestamptz(3)
+  kafkaTimestamp DateTime              @map("kafka_timestamp") @db.Timestamptz(3)
   topic          String
   partition      Int
   offset         BigInt
@@ -240,25 +296,86 @@ model ProcessedMessage {
   ledger         CapacityLedger[]
   fxRates        FxRate[]
   release        ReservationRelease?
+  funding        ReservationFunding?   @relation("FundingMessage")
+  fundingReturn  ReservationFunding?   @relation("FundingReturnMessage")
   breaksOpened   ProgramBreak[]        @relation("BreakOpenedBy")
   breaksResolved ProgramBreak[]        @relation("BreakResolvedBy")
+  batch          ReconciliationBatch?
   processedAt    DateTime              @default(now()) @map("processed_at") @db.Timestamptz(3)
 
-  @@index([batchId])
+  @@index([batchId, programExternalId])
+  @@index([programId, processedAt])
+  @@index([programExternalId])
   @@map("processed_message")
 }
 
+model ParkedMessage {
+  messageId         String             @id @map("message_id")
+  type              InboundMessageType
+  programId         String?            @map("program_id") @db.Uuid
+  programExternalId String             @map("program_external_id")
+  reservationId     String?            @map("reservation_id") @db.Uuid
+  awaitingKind      AwaitingKind       @map("awaiting_kind")
+  awaitingRef       String             @map("awaiting_ref")
+  envelope          Json
+  kafkaTimestamp    DateTime           @map("kafka_timestamp") @db.Timestamptz(3)
+  topic             String
+  partition         Int
+  offset            BigInt
+  program           Program?           @relation(fields: [programId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  reservation       Reservation?       @relation(fields: [reservationId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  parkedAt          DateTime           @default(now()) @map("parked_at") @db.Timestamptz(3)
+  resolvedAt        DateTime?          @map("resolved_at") @db.Timestamptz(3)
+
+  @@index([awaitingKind, awaitingRef])
+  @@index([reservationId, partition, offset])
+  @@index([programExternalId, partition, offset])
+  @@map("parked_message")
+}
+
 model OutboxEvent {
-  id          BigInt            @id @default(autoincrement())
-  eventId     String            @unique @default(dbgenerated("gen_random_uuid()")) @map("event_id") @db.Uuid
-  type        OutboundEventType
-  programId   String            @map("program_id") @db.Uuid
-  payload     Json
-  program     Program           @relation(fields: [programId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  createdAt   DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
-  publishedAt DateTime?         @map("published_at") @db.Timestamptz(3)
+  id           BigInt            @id @default(autoincrement())
+  eventId      String            @unique @default(dbgenerated("gen_random_uuid()")) @map("event_id") @db.Uuid
+  type         OutboundEventType
+  programId    String?           @map("program_id") @db.Uuid
+  partitionKey String            @map("partition_key")
+  payload      Json
+  program      Program?          @relation(fields: [programId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  createdAt    DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
+  publishedAt  DateTime?         @map("published_at") @db.Timestamptz(3)
 
   @@map("outbox_event")
+}
+
+model ReservationDecline {
+  id                String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  programId         String   @map("program_id") @db.Uuid
+  invoiceId         String   @map("invoice_id")
+  requestedAmount   Decimal  @map("requested_amount") @db.Decimal(20, 4)
+  requestedCurrency String   @map("requested_currency") @db.Char(3)
+  code              String
+  details           Json
+  createdBy         String   @map("created_by")
+  correlationId     String   @map("correlation_id")
+  program           Program  @relation(fields: [programId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([programId, createdAt(sort: Desc)])
+  @@index([invoiceId])
+  @@map("reservation_decline")
+}
+
+model ReconciliationBatch {
+  batchId            String           @id @map("batch_id")
+  programCount       Int              @map("program_count")
+  completedMessageId String           @unique @map("completed_message_id")
+  deadlineAt         DateTime         @map("deadline_at") @db.Timestamptz(3)
+  completedAt        DateTime?        @map("completed_at") @db.Timestamptz(3)
+  alertedAt          DateTime?        @map("alerted_at") @db.Timestamptz(3)
+  completedMessage   ProcessedMessage @relation(fields: [completedMessageId], references: [messageId], onDelete: Restrict, onUpdate: Restrict)
+  createdAt          DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@map("reconciliation_batch")
 }
 
 model IdempotencyRecord {
