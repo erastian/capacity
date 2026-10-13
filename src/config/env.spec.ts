@@ -37,6 +37,8 @@ describe('validateEnv', () => {
     ['AUTH_ISSUER', 'not a url'],
     ['AUTH_AUDIENCE', ''],
     ['AUTH_CLOCK_TOLERANCE_SECONDS', '3600'],
+    ['BUSINESS_TIMEZONE', 'Mars/Olympus'],
+    ['DB_POOL_SIZE', '0'],
   ])('fails on invalid %s=%s', (key, value) => {
     expect(() => validateEnv({ ...VALID, [key]: value })).toThrow(key);
   });

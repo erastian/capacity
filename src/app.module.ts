@@ -6,8 +6,10 @@ import type { IncomingMessage } from 'node:http';
 import { validateEnv, type Env } from './config/env.js';
 import { HealthModule } from './health/health.module.js';
 import { MetricsModule } from './metrics/metrics.module.js';
+import { ReservationsModule } from './reservations/reservations.module.js';
 import { AuthModule } from './shared/auth/auth.module.js';
 import { PrismaModule } from './shared/db/prisma.module.js';
+import { TimeModule } from './shared/time/time.module.js';
 import { ProblemFilter } from './shared/errors/problem.filter.js';
 
 @Module({
@@ -63,9 +65,11 @@ import { ProblemFilter } from './shared/errors/problem.filter.js';
       }),
     }),
     PrismaModule,
+    TimeModule,
     AuthModule,
     MetricsModule,
     HealthModule,
+    ReservationsModule,
   ],
   providers: [{ provide: APP_FILTER, useClass: ProblemFilter }],
 })
