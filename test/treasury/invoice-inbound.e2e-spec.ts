@@ -6,51 +6,17 @@ import { startApp } from '../support/app.js';
 import { CapturingPublisher } from '../support/capturing-publisher.js';
 import { closeDb, db, seedProgram, seedRate, unique } from '../support/db.js';
 import { token } from '../support/issuer.js';
+import { programMessage, quoteMessage } from '../support/treasury-messages.js';
 
 const INVOICE_CURRENCY = 'THB';
 
 const ORIGINATION ={ sub: 'svc-origination', azp: 'origination', scope: 'reservations:write programs:read:all' };
 
-let offset = 0n;
-let quoteVersion = BigInt(Date.now()) * 1000n;
+const message = (type: string, programId: string, payload: Record<string, unknown>, messageId?: string) =>
+  programMessage({ type, programId, payload, messageId });
 
-function message(type: string, programId: string, payload: Record<string, unknown>, messageId = unique('m')): RawMessage & { messageId: string } {
-  return {
-    messageId,
-    topic: 'treasury.program-capacity',
-    partition: 0,
-    offset: offset++,
-    key: programId,
-    value: JSON.stringify({
-      messageId,
-      type,
-      schemaVersion: 1,
-      programId,
-      asOf: new Date(Date.now() - 1000).toISOString(),
-      payload,
-    }),
-    timestamp: new Date(),
-  };
-}
-
-function conversionQuote(rateId: string, rate = '4.6512'): RawMessage {
-  const messageId = unique('m');
-  return {
-    topic: 'treasury.fx-rates',
-    partition: 0,
-    offset: offset++,
-    key: `RON:${INVOICE_CURRENCY}:CONVERSION`,
-    value: JSON.stringify({
-      messageId,
-      type: 'FX_RATE_PUBLISHED',
-      schemaVersion: 1,
-      version: (++quoteVersion).toString(),
-      asOf: new Date(Date.now() - 1000).toISOString(),
-      payload: { rateId, from: 'RON', to: INVOICE_CURRENCY, rateType: 'CONVERSION', status: 'ACTIVE', rate },
-    }),
-    timestamp: new Date(),
-  };
-}
+const conversionQuote = (rateId: string, rate = '4.6512') =>
+  quoteMessage({ rateId, from: 'RON', to: INVOICE_CURRENCY, rateType: 'CONVERSION', rate });
 
 const owed = (amount: string) => ({ amount, currency: INVOICE_CURRENCY });
 

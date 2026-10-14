@@ -89,7 +89,7 @@ describe('POST /v1/reservations', () => {
 
       const ledger = await db().query(
         `SELECT type::text AS type, reserved_delta, reserved_after, credit_limit_after, external_utilized_after
-         FROM capacity_ledger WHERE program_id = $1`,
+         FROM capacity_ledger WHERE program_id = $1 AND type = 'RESERVE'`,
         [program.id],
       );
       expect(ledger.rows).toEqual([
@@ -306,7 +306,7 @@ describe('POST /v1/reservations', () => {
 
       const ledger = await db().query(
         `SELECT count(*)::int AS entries, max(reserved_after) AS last, sum(reserved_delta) AS total
-         FROM capacity_ledger WHERE program_id = $1`,
+         FROM capacity_ledger WHERE program_id = $1 AND type = 'RESERVE'`,
         [program.id],
       );
       expect(ledger.rows[0]).toEqual({ entries: 60, last: '60.0000', total: '60.0000' });

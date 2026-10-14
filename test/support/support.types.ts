@@ -42,6 +42,7 @@ export interface ProgramMessageInput {
   type: string;
   programId?: string;
   batchId?: string;
+  key?: string | null;
   version?: number | string;
   payload?: Record<string, unknown>;
   messageId?: string;

@@ -3,26 +3,15 @@ import { InternalReconciliation } from '../../src/operations/internal-reconcilia
 import { MaintenanceCleanup } from '../../src/operations/maintenance-cleanup.js';
 import { OperationalMonitors } from '../../src/operations/monitors.js';
 import { EventPublisher } from '../../src/outbox/event-publisher.js';
-import type { RawMessage } from '../../src/treasury/adapter/envelope.types.js';
 import { InboundProcessor } from '../../src/treasury/inbound.processor.js';
 import { startApp } from '../support/app.js';
 import { CapturingPublisher } from '../support/capturing-publisher.js';
 import { closeDb, db, ownerDb, seedProgram, unique } from '../support/db.js';
 import { token } from '../support/issuer.js';
+import { programMessage } from '../support/treasury-messages.js';
 
-let offset = 0n;
-
-function treasury(type: string, programId: string, payload: Record<string, unknown>): RawMessage {
-  const messageId = unique('m');
-  return {
-    topic: 'treasury.program-capacity',
-    partition: 0,
-    offset: offset++,
-    key: programId,
-    value: JSON.stringify({ messageId, type, schemaVersion: 1, programId, asOf: new Date(Date.now() - 1000).toISOString(), payload }),
-    timestamp: new Date(),
-  };
-}
+const treasury = (type: string, programId: string, payload: Record<string, unknown>) =>
+  programMessage({ type, programId, payload });
 
 const snapshot = (limit = '1000') => ({
   currency: 'EUR',

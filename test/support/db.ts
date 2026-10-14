@@ -26,9 +26,22 @@ export const unique = (prefix: string) => `${prefix}-${randomUUID().slice(0, 8)}
 
 export async function seedProgram(seed: ProgramSeed = {}): Promise<string> {
   const externalId = unique('P');
+  const messageId = unique('m');
   await db().query(
-    `INSERT INTO program (external_id, client_ref, currency, credit_limit, external_utilized, status, open_blocking_breaks, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, now())`,
+    `WITH p AS (
+       INSERT INTO program (external_id, client_ref, currency, credit_limit, external_utilized, status, open_blocking_breaks, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, now())
+       RETURNING id, credit_limit, external_utilized
+     ), m AS (
+       INSERT INTO processed_message (message_id, type, outcome, program_id, program_external_id, as_of, kafka_timestamp, topic, partition, "offset")
+       SELECT $8, 'PROGRAM_SNAPSHOT', 'APPLIED', p.id, $1, now(), now(), 'treasury.program-capacity', 0, 0 FROM p
+       RETURNING message_id
+     )
+     INSERT INTO capacity_ledger (program_id, type, credit_limit_delta, external_utilized_delta,
+                                  credit_limit_after, external_utilized_after, reserved_after, message_id)
+     SELECT p.id, 'TREASURY_SNAPSHOT', p.credit_limit, p.external_utilized, p.credit_limit, p.external_utilized, 0, m.message_id
+     FROM p, m
+     WHERE p.credit_limit <> 0 OR p.external_utilized <> 0`,
     [
       externalId,
       seed.clientRef ?? 'C-ACME',
@@ -37,6 +50,7 @@ export async function seedProgram(seed: ProgramSeed = {}): Promise<string> {
       seed.externalUtilized ?? '0',
       seed.status ?? 'ACTIVE',
       seed.openBlockingBreaks ?? 0,
+      messageId,
     ],
   );
   return externalId;

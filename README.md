@@ -196,13 +196,15 @@ Rules Prisma cannot express (CHECK constraints, partial indexes, grants) are app
 ## Testing
 
 ```bash
-npm test            # unit: domain decisions, adapter, money, versioning, pagination
+npm test            # unit: domain decisions, adapter, money, versioning, pagination, retry policy, consumer retries, error mapping, metrics
 npm run test:e2e    # e2e on Testcontainers: real Postgres 17 and Kafka 4.3.1
 npm run lint        # oxlint
 npm run typecheck   # tsc over src, test and scripts
 ```
 
-E2e tests cover: every database guard (CHECKs and grants, per role), authentication and scopes, reserve (all decline paths, idempotency, 100 concurrent reservations against a limit of 60), every treasury message type and its decision table, parking and replay order, breaks and their closing conditions, reconciliation batches, read API visibility ("A does not see B" on every endpoint), audit journals, monitors, internal reconciliation and cleanup, and the real Kafka path (relay ordering, leader failover, consumer, DLQ, and payments releasing capacity end to end: REST reservation → allocation through the broker → `RESERVATION_RELEASED` back on the bus, including an invoice in another currency paid in a third one).
+E2e tests cover: every database guard (CHECKs and grants, per role), authentication and scopes, reserve (all decline paths, idempotency, 100 concurrent reservations against a limit of 60), every treasury message type and its decision table, parking and replay order, breaks and their closing conditions, reconciliation batches, read API visibility ("A does not see B" on every endpoint), audit journals, monitors, internal reconciliation and cleanup, and the real Kafka path (relay ordering, leader failover, consumer, DLQ, and payments releasing capacity end to end: REST reservation → allocation through the broker → `RESERVATION_RELEASED` back on the bus, including an invoice in another currency paid in a third one). Failure paths are covered too: a real Postgres data error and an exhausted attempt budget end as `PROCESSING_FAILED`, a parked replay that fails on its data is rejected and the queue moves on, a transient replay failure raises `PARKED_REPLAY_FAILED` and is applied by a later sweep.
+
+All e2e files share one database and run in parallel; each test works on its own programmes, quotes and invoices (unique ids), and seeded programmes carry a matching ledger entry so internal reconciliation sees only the inconsistencies a test makes on purpose. Not covered: reopening the consumer stream after a broker failure, which needs a broker that can be broken on demand.
 
 CI is not set up yet. Next step: a GitHub Actions pipeline running `npm ci`, lint, type check, build, unit and e2e tests on every push and pull request (Testcontainers runs on the hosted Ubuntu runners, no external services needed).
 

@@ -1,34 +1,16 @@
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { randomUUID } from 'node:crypto';
 import { EventPublisher } from '../../src/outbox/event-publisher.js';
-import type { RawMessage } from '../../src/treasury/adapter/envelope.types.js';
 import { InboundProcessor } from '../../src/treasury/inbound.processor.js';
 import { startApp } from '../support/app.js';
 import { CapturingPublisher } from '../support/capturing-publisher.js';
 import { closeDb, db, unique } from '../support/db.js';
 import { token } from '../support/issuer.js';
-
-let offset = 0n;
+import { programMessage } from '../support/treasury-messages.js';
 
 function treasury(type: string, programId: string, payload: Record<string, unknown>, version?: number) {
-  const messageId = unique('m');
-  const raw: RawMessage = {
-    topic: 'treasury.program-capacity',
-    partition: 0,
-    offset: offset++,
-    key: programId,
-    value: JSON.stringify({
-      messageId,
-      type,
-      schemaVersion: 1,
-      programId,
-      version,
-      asOf: new Date(Date.now() - 1000).toISOString(),
-      payload,
-    }),
-    timestamp: new Date(),
-  };
-  return { messageId, raw };
+  const raw = programMessage({ type, programId, payload, version });
+  return { messageId: raw.messageId, raw };
 }
 
 const snapshotPayload = (limitCurrency = 'EUR') => ({

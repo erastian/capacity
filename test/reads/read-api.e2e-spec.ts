@@ -1,47 +1,20 @@
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { EventPublisher } from '../../src/outbox/event-publisher.js';
-import type { RawMessage } from '../../src/treasury/adapter/envelope.types.js';
 import { InboundProcessor } from '../../src/treasury/inbound.processor.js';
 import { startApp } from '../support/app.js';
 import { CapturingPublisher } from '../support/capturing-publisher.js';
 import { closeDb, seedProgram, seedRate, unique } from '../support/db.js';
 import { token } from '../support/issuer.js';
+import { programMessage, quoteMessage } from '../support/treasury-messages.js';
 
 const INVOICE = 'SGD';
 const PAYMENT = 'MYR';
 
-let offset = 0n;
-let quoteVersion = BigInt(Date.now()) * 1000n;
+const treasury = (type: string, programId: string, payload: Record<string, unknown>) =>
+  programMessage({ type, programId, payload });
 
-function treasury(type: string, programId: string, payload: Record<string, unknown>): RawMessage {
-  const messageId = unique('m');
-  return {
-    topic: 'treasury.program-capacity',
-    partition: 0,
-    offset: offset++,
-    key: programId,
-    value: JSON.stringify({ messageId, type, schemaVersion: 1, programId, asOf: new Date(Date.now() - 1000).toISOString(), payload }),
-    timestamp: new Date(),
-  };
-}
-
-function conversionQuote(rateId: string, rate: string): RawMessage {
-  return {
-    topic: 'treasury.fx-rates',
-    partition: 0,
-    offset: offset++,
-    key: `${PAYMENT}:${INVOICE}:CONVERSION`,
-    value: JSON.stringify({
-      messageId: unique('m'),
-      type: 'FX_RATE_PUBLISHED',
-      schemaVersion: 1,
-      version: (++quoteVersion).toString(),
-      asOf: new Date(Date.now() - 1000).toISOString(),
-      payload: { rateId, from: PAYMENT, to: INVOICE, rateType: 'CONVERSION', status: 'ACTIVE', rate },
-    }),
-    timestamp: new Date(),
-  };
-}
+const conversionQuote = (rateId: string, rate: string) =>
+  quoteMessage({ rateId, from: PAYMENT, to: INVOICE, rateType: 'CONVERSION', rate });
 
 describe('read API', () => {
   let app: NestFastifyApplication;

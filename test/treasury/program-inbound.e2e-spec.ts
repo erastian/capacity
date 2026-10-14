@@ -1,5 +1,6 @@
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { Prisma } from '../../src/generated/prisma/client.js';
+import { MetricsServer } from '../../src/metrics/metrics.server.js';
 import { EventPublisher } from '../../src/outbox/event-publisher.js';
 import type { RawMessage } from '../../src/treasury/adapter/envelope.types.js';
 import { InboundProcessor } from '../../src/treasury/inbound.processor.js';
@@ -13,32 +14,18 @@ import { CapturingPublisher } from '../support/capturing-publisher.js';
 import { closeDb, db, seedProgram, seedRate, unique } from '../support/db.js';
 import { token } from '../support/issuer.js';
 import type { ProgramMessageInput as MessageInput } from '../support/support.types.js';
-
-let offset = 0n;
+import { nextOffset, programMessage } from '../support/treasury-messages.js';
 
 function raw(input: MessageInput | string, key?: string): RawMessage & { messageId: string } {
-  const messageId = typeof input === 'string' ? unique('bad') : (input.messageId ?? unique('m'));
-  const value =
-    typeof input === 'string'
-      ? input
-      : JSON.stringify({
-          messageId,
-          type: input.type,
-          schemaVersion: input.schemaVersion ?? 1,
-          programId: input.programId,
-          batchId: input.batchId,
-          version: input.version,
-          asOf: input.asOf ?? new Date(Date.now() - 1000).toISOString(),
-          payload: input.payload ?? {},
-        });
+  if (typeof input !== 'string') return programMessage(key === undefined ? input : { ...input, key });
   return {
-    messageId,
+    messageId: unique('bad'),
     topic: 'treasury.program-capacity',
     partition: 0,
-    offset: offset++,
-    key: key ?? (typeof input === 'string' ? null : (input.programId ?? null)),
-    value,
-    timestamp: typeof input === 'string' ? new Date() : (input.brokerTime ?? new Date()),
+    offset: nextOffset(),
+    key: key ?? null,
+    value: input,
+    timestamp: new Date(),
   };
 }
 
@@ -374,11 +361,34 @@ describe('treasury program messages', () => {
       };
       const prisma = app.get(PrismaService);
       await prisma.inTransaction(async (tx) => {
-        await park(tx, offset++, unique('R'));
-        await park(tx, offset++, arrived);
+        await park(tx, nextOffset(), unique('R'));
+        await park(tx, nextOffset(), arrived);
       });
 
       expect(await prisma.inTransaction((tx) => queue.nextResolvableParked(tx, programId))).toBeUndefined();
+    });
+
+    it('keep a replay that fails transiently parked, raise an alert and apply it on a later sweep', async () => {
+      const programId = unique('P');
+      const message = await send(limit(programId, '500', 6));
+      const update = vi
+        .spyOn(app.get(ProgramStateRepository), 'updateProgram')
+        .mockRejectedValue(new Error('Connection terminated unexpectedly'));
+      const alerts = async () =>
+        (await app.get(MetricsServer).registry.getSingleMetric('treasury_alerts_total')!.get()).values.find(
+          (item) => item.labels.alert === 'PARKED_REPLAY_FAILED',
+        )?.value ?? 0;
+      const before = await alerts();
+
+      await send(snapshot(programId));
+      await processor.resolveAllParked();
+      expect(await alerts()).toBeGreaterThan(before);
+      expect(await inbox(message.messageId)).toBeUndefined();
+
+      update.mockRestore();
+      await processor.resolveAllParked();
+      expect(await inbox(message.messageId)).toMatchObject({ outcome: 'APPLIED' });
+      expect((await program(programId)).credit_limit).toBe('500.0000');
     });
 
     it('reject a replay that fails on its data and let the next message through', async () => {
@@ -411,7 +421,7 @@ describe('treasury program messages', () => {
       await send(snapshot(programId));
       const message = raw(limit(programId, '1500', 6));
       await processor.process(message);
-      await processor.process({ ...message, offset: offset++ });
+      await processor.process({ ...message, offset: nextOffset() });
 
       expect((await ledger((await program(programId)).id)).length).toBe(2);
       expect((await statuses(message.messageId)).map((s) => s.status)).toEqual(['ACCP']);
@@ -421,7 +431,7 @@ describe('treasury program messages', () => {
       const programId = unique('P');
       const message = raw(limit(programId, '500', 4));
       await processor.process(message);
-      await processor.process({ ...message, offset: offset++ });
+      await processor.process({ ...message, offset: nextOffset() });
       expect((await statuses(message.messageId)).map((s) => s.status)).toEqual(['PDNG', 'PDNG']);
     });
   });
@@ -442,7 +452,7 @@ describe('treasury program messages', () => {
       const message = raw({ type: 'LIMIT_UPDATED', programId, version: 6, payload: { creditLimit: { amount: 1500, currency: 'EUR' } } });
       const before = publisher.sent.length;
       await processor.process(message);
-      await processor.process({ ...message, offset: offset++ });
+      await processor.process({ ...message, offset: nextOffset() });
 
       expect(await inbox(message.messageId)).toEqual({ type: 'LIMIT_UPDATED', outcome: 'REJECTED', reason: 'INVALID_FORMAT' });
       expect((await statuses(message.messageId)).map((s) => s.status)).toEqual(['RJCT', 'RJCT']);
@@ -483,7 +493,7 @@ describe('treasury program messages', () => {
       });
       expect((await statuses(message.messageId)).map((s) => s.status)).toEqual(['RJCT']);
 
-      await processor.process({ ...message, offset: offset++ });
+      await processor.process({ ...message, offset: nextOffset() });
       expect(publisher.sent.slice(before).map((m) => m.headers['dlq-reason'])).toEqual([
         'PROCESSING_FAILED',
         'PROCESSING_FAILED',

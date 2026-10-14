@@ -1,44 +1,22 @@
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { randomUUID } from 'node:crypto';
 import { EventPublisher } from '../../src/outbox/event-publisher.js';
-import type { RawMessage } from '../../src/treasury/adapter/envelope.types.js';
 import { InboundProcessor } from '../../src/treasury/inbound.processor.js';
 import { ReconciliationBatches } from '../../src/treasury/reconciliation-batches.js';
 import { startApp } from '../support/app.js';
 import { CapturingPublisher } from '../support/capturing-publisher.js';
 import { closeDb, db, seedProgram, unique } from '../support/db.js';
 import { token } from '../support/issuer.js';
+import type { ProgramMessageInput } from '../support/support.types.js';
+import { programMessage } from '../support/treasury-messages.js';
 
 const ORIGINATION = { sub: 'svc-origination', azp: 'origination', scope: 'reservations:write programs:read:all' };
 
-let offset = 0n;
-
-interface Extra {
-  version?: number;
-  batchId?: string;
-  brokerTime?: Date;
-}
+type Extra = Pick<ProgramMessageInput, 'version' | 'batchId' | 'brokerTime'>;
 
 function message(type: string, programId: string | undefined, payload: Record<string, unknown>, extra: Extra = {}) {
-  const messageId = unique('m');
-  const raw: RawMessage = {
-    topic: 'treasury.program-capacity',
-    partition: 0,
-    offset: offset++,
-    key: programId ?? extra.batchId ?? null,
-    value: JSON.stringify({
-      messageId,
-      type,
-      schemaVersion: 1,
-      programId,
-      batchId: extra.batchId,
-      version: extra.version,
-      asOf: new Date(Date.now() - 60_000).toISOString(),
-      payload,
-    }),
-    timestamp: extra.brokerTime ?? new Date(),
-  };
-  return { messageId, raw };
+  const raw = programMessage({ type, programId, payload, ...extra, asOf: new Date(Date.now() - 60_000).toISOString() });
+  return { messageId: raw.messageId, raw };
 }
 
 interface SnapshotInput {

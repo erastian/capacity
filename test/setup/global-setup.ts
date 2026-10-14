@@ -29,6 +29,7 @@ export async function setup(project: TestProject): Promise<void> {
         mode: 0o755,
       },
     ])
+    .withCommand(['postgres', '-c', 'max_connections=300'])
     .start();
 
   const url = (user: string) =>

@@ -1,48 +1,13 @@
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { EventPublisher } from '../../src/outbox/event-publisher.js';
-import type { RawMessage } from '../../src/treasury/adapter/envelope.types.js';
 import { InboundProcessor } from '../../src/treasury/inbound.processor.js';
 import { startApp } from '../support/app.js';
 import { CapturingPublisher } from '../support/capturing-publisher.js';
 import { closeDb, db, seedProgram, unique } from '../support/db.js';
 import { token } from '../support/issuer.js';
 import type { QuoteInput } from '../support/support.types.js';
+import { nextOffset, quoteMessage as quote } from '../support/treasury-messages.js';
 
-let offset = 0n;
-let version = BigInt(Date.now()) * 1000n;
-
-function quote(input: QuoteInput = {}): RawMessage & { messageId: string; rateId: string } {
-  const messageId = input.messageId ?? unique('m');
-  const rateId = input.rateId ?? unique('R');
-  const from = input.from ?? 'USD';
-  const to = input.to ?? 'EUR';
-  const rateType = input.rateType ?? 'VALUATION';
-  const asOf = new Date(Date.now() - (input.ageSeconds ?? 1) * 1000);
-  return {
-    messageId,
-    rateId,
-    topic: 'treasury.fx-rates',
-    partition: 0,
-    offset: offset++,
-    key: `${from}:${to}:${rateType}`,
-    value: JSON.stringify({
-      messageId,
-      type: 'FX_RATE_PUBLISHED',
-      schemaVersion: 1,
-      version: (input.version ?? ++version).toString(),
-      asOf: asOf.toISOString(),
-      payload: {
-        rateId,
-        from,
-        to,
-        rateType,
-        status: input.status ?? 'ACTIVE',
-        ...(input.rate === null ? {} : { rate: input.rate ?? '0.92' }),
-      },
-    }),
-    timestamp: asOf,
-  };
-}
 
 describe('treasury FX quotes', () => {
   let app: NestFastifyApplication;
@@ -128,7 +93,7 @@ describe('treasury FX quotes', () => {
 
   it('answers the same quote resent under a new message as STALE', async () => {
     const first = quote({ from: 'HUF', to: 'EUR' });
-    const again = { ...first, messageId: unique('m'), offset: offset++ };
+    const again = { ...first, messageId: unique('m'), offset: nextOffset() };
     again.value = JSON.stringify({ ...JSON.parse(first.value!), messageId: again.messageId });
     await processor.process(first);
     await processor.process(again);
