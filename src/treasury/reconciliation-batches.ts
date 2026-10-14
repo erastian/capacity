@@ -2,6 +2,7 @@ import { Injectable, Logger, OnApplicationBootstrap, OnApplicationShutdown } fro
 import { ConfigService } from '@nestjs/config';
 import type { Env } from '../config/env.js';
 import { PrismaService } from '../shared/db/prisma.service.js';
+import { Periodic } from '../shared/time/periodic.js';
 import { InboundMetrics } from './inbound.metrics.js';
 import { InboundRepository } from './inbound.repository.js';
 
@@ -9,8 +10,10 @@ import { InboundRepository } from './inbound.repository.js';
 export class ReconciliationBatches implements OnApplicationBootstrap, OnApplicationShutdown {
   private readonly logger = new Logger(ReconciliationBatches.name);
   private readonly checkInterval: number;
-  private timer?: NodeJS.Timeout;
-  private running?: Promise<void>;
+  private readonly deadlines = new Periodic(
+    () => this.checkDeadlines(),
+    (error) => this.logger.error(error),
+  );
 
   constructor(
     private readonly prisma: PrismaService,
@@ -22,20 +25,11 @@ export class ReconciliationBatches implements OnApplicationBootstrap, OnApplicat
   }
 
   onApplicationBootstrap(): void {
-    this.timer = setInterval(() => {
-      if (this.running) return;
-      this.running = this.checkDeadlines()
-        .catch((error: unknown) => this.logger.error(error))
-        .finally(() => {
-          this.running = undefined;
-        });
-    }, this.checkInterval);
-    this.timer.unref();
+    this.deadlines.start(this.checkInterval);
   }
 
   async onApplicationShutdown(): Promise<void> {
-    clearInterval(this.timer);
-    await this.running;
+    await this.deadlines.stop();
   }
 
   async complete(batchId: string): Promise<void> {

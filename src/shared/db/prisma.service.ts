@@ -41,11 +41,15 @@ export class PrismaService
     await this.$disconnect();
   }
 
-  async inTransaction<T>(work: (tx: Tx) => Promise<T>): Promise<T> {
+  async inTransaction<T>(
+    work: (tx: Tx) => Promise<T>,
+    options: { isolationLevel?: Prisma.TransactionIsolationLevel; timeout?: number } = {},
+  ): Promise<T> {
     try {
       return await this.$transaction(work, {
         maxWait: this.maxWait,
-        timeout: this.timeout,
+        timeout: options.timeout ?? this.timeout,
+        isolationLevel: options.isolationLevel,
       });
     } catch (error) {
       if (

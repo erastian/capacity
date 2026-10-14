@@ -4,15 +4,22 @@ import { inject } from 'vitest';
 import type { ProgramSeed, RateSeed } from './support.types.js';
 
 let pool: pg.Pool | undefined;
+let ownerPool: pg.Pool | undefined;
 
 export function db(): pg.Pool {
   pool ??= new pg.Pool({ connectionString: inject('databaseUrls').app, max: 4 });
   return pool;
 }
 
+export function ownerDb(): pg.Pool {
+  ownerPool ??= new pg.Pool({ connectionString: inject('databaseUrls').migrator, max: 2 });
+  return ownerPool;
+}
+
 export async function closeDb(): Promise<void> {
-  await pool?.end();
+  await Promise.all([pool?.end(), ownerPool?.end()]);
   pool = undefined;
+  ownerPool = undefined;
 }
 
 export const unique = (prefix: string) => `${prefix}-${randomUUID().slice(0, 8)}`;

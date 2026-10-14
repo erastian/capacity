@@ -187,6 +187,7 @@ model Reservation {
   updatedAt              DateTime             @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   @@index([programId, createdAt(sort: Desc), id(sort: Desc)])
+  @@index([updatedAt])
   @@map("reservation")
 }
 
@@ -366,6 +367,14 @@ model ReservationDecline {
   @@index([invoiceId])
   @@index([invoiceId, createdBy, createdAt(sort: Desc)])
   @@map("reservation_decline")
+}
+
+model ReconciliationCheckpoint {
+  check     String   @id
+  watermark String
+  updatedAt DateTime @map("updated_at") @db.Timestamptz(3)
+
+  @@map("reconciliation_checkpoint")
 }
 
 model ReconciliationBatch {

@@ -3,6 +3,7 @@ import {
   IsIn,
   IsInt,
   IsNotEmpty,
+  IsOptional,
   IsString,
   IsTimeZone,
   IsUrl,
@@ -89,6 +90,45 @@ export class Env {
   @IsInt()
   @Min(1)
   CONSUMER_LAG_MAX_SECONDS = 5 * 60;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  PARKED_MAX_AGE_SECONDS = 15 * 60;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  TREASURY_DATA_MAX_AGE_SECONDS = 26 * 60 * 60;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(1000)
+  MONITOR_INTERVAL_MS = 60_000;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(60_000)
+  INTERNAL_RECONCILIATION_INTERVAL_MS = 24 * 60 * 60 * 1000;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  INTERNAL_RECONCILIATION_FULL_SWEEP_DAYS = 7;
+
+  @IsOptional()
+  @IsString()
+  MAINTENANCE_DATABASE_URL?: string;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  OUTBOX_RETENTION_SECONDS = 24 * 60 * 60;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(1000)
+  CLEANUP_INTERVAL_MS = 60 * 60 * 1000;
 
   @Type(() => Number)
   @IsInt()
