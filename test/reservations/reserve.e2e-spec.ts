@@ -281,11 +281,12 @@ describe('POST /v1/reservations', () => {
       const results = await Promise.all(
         Array.from({ length: 100 }, () => reserve(request(programId, { amount: '1' }))),
       );
-      const codes = results.map((r) => r.statusCode);
+      const tally = results.reduce<Record<string, number>>((counts, r) => {
+        const key = r.statusCode >= 400 ? `${r.statusCode} ${r.json().code}` : String(r.statusCode);
+        return { ...counts, [key]: (counts[key] ?? 0) + 1 };
+      }, {});
 
-      expect(codes.filter((c) => c === 201)).toHaveLength(60);
-      expect(codes.filter((c) => c === 409)).toHaveLength(40);
-      expect(results.filter((r) => r.statusCode === 409).every((r) => r.json().code === 'INSUFFICIENT_CAPACITY')).toBe(true);
+      expect(tally).toEqual({ '201': 60, '409 INSUFFICIENT_CAPACITY': 40 });
 
       const program = await programRow(programId);
       expect(program.reserved).toBe('60.0000');

@@ -6,6 +6,7 @@ Object.assign(process.env, {
   LOG_LEVEL: 'silent',
   METRICS_PORT: '0',
   DATABASE_URL: inject('databaseUrls').app,
+  DB_TX_MAX_WAIT_MS: '30000',
   AUTH_ISSUER: ISSUER,
   AUTH_AUDIENCE: AUDIENCE,
   AUTH_JWKS_URL: JWKS_URL,
