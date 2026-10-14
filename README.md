@@ -30,7 +30,7 @@ A detailed design specification (`specifications.md`, ~800 lines: data model, st
 ```bash
 cp .env.example .env
 docker compose up -d                 # Postgres, Keycloak (realm imported), Kafka with SASL + ACLs, Kafka UI
-npm ci
+npm ci                               # postinstall runs prisma generate into src/generated/prisma (reads .env)
 npx prisma migrate deploy            # runs as the schema owner role, see "Database roles"
 npm run start:dev                    # API on :3000, metrics on :9464
 
