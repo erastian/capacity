@@ -1,0 +1,48 @@
+### Reserve an invoice (run auth.http first)
+< {%
+  request.variables.set("invoiceId", "INV-" + $random.uuid.substring(0, 8));
+  request.variables.set("idempotencyKey", "key-" + $random.uuid);
+%}
+POST {{api}}/v1/reservations
+Authorization: Bearer {{origination}}
+Content-Type: application/json
+Idempotency-Key: {{idempotencyKey}}
+
+{
+  "programId": "{{programId}}",
+  "invoiceId": "{{invoiceId}}",
+  "amount": "1000.00",
+  "currency": "{{currency}}",
+  "dueDate": "2099-12-31"
+}
+
+> {%
+  if (response.status === 201) {
+    client.global.set("reservationId", response.body.id);
+    client.global.set("lastInvoiceId", response.body.invoiceId);
+  }
+%}
+
+### Find a reservation by invoice (origination reconciliation)
+GET {{api}}/v1/reservations?invoiceId={{lastInvoiceId}}
+Authorization: Bearer {{origination}}
+
+### Reservations of a programme, newest first
+GET {{api}}/v1/reservations?programId={{programId}}&limit=20
+Authorization: Bearer {{operator}}
+
+### Reservation card: movements, pending messages, breaks
+GET {{api}}/v1/reservations/{{reservationId}}
+Authorization: Bearer {{operator}}
+
+### Payoff quote in the invoice currency
+GET {{api}}/v1/reservations/{{reservationId}}/payoff-quote
+Authorization: Bearer {{buyer}}
+
+### Payoff quote in another currency (needs a CONVERSION quote: npm run simulate -- rates)
+GET {{api}}/v1/reservations/{{reservationId}}/payoff-quote?currency=USD
+Authorization: Bearer {{buyer}}
+
+### Declines of an invoice, as seen by the origination service
+GET {{api}}/v1/declines?invoiceId={{lastInvoiceId}}
+Authorization: Bearer {{origination}}

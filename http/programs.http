@@ -1,0 +1,19 @@
+### Programmes visible to the caller (a buyer sees only its own)
+GET {{api}}/v1/programs?limit=20
+Authorization: Bearer {{buyer}}
+
+### Availability of a programme
+GET {{api}}/v1/programs/{{programId}}/availability
+Authorization: Bearer {{buyer}}
+
+### Current FX quotes (bank roles)
+GET {{api}}/v1/fx-rates?to=EUR
+Authorization: Bearer {{operator}}
+
+### Breaks of a programme (operator, auditor)
+GET {{api}}/v1/programs/{{programId}}/breaks
+Authorization: Bearer {{operator}}
+
+### Open breaks across programmes, including programmes not created yet
+GET {{api}}/v1/breaks?open=true
+Authorization: Bearer {{operator}}

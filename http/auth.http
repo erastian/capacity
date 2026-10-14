@@ -1,0 +1,31 @@
+### Origination service token (client credentials): reservations:write programs:read:all
+POST {{tokenUrl}}
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=client_credentials&client_id=origination&client_secret={{originationSecret}}
+
+> {% client.global.set("origination", response.body.access_token); %}
+
+### Bank operator: programs:read:all breaks:read
+POST {{tokenUrl}}
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=password&client_id=capacity-local&username=operator&password=operator
+
+> {% client.global.set("operator", response.body.access_token); %}
+
+### Auditor: programs:read:all breaks:read audit:read
+POST {{tokenUrl}}
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=password&client_id=capacity-local&username=auditor&password=auditor
+
+> {% client.global.set("auditor", response.body.access_token); %}
+
+### Buyer C-ACME: programs:read:own
+POST {{tokenUrl}}
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=password&client_id=capacity-local&username=buyer-acme&password=buyer-acme
+
+> {% client.global.set("buyer", response.body.access_token); %}

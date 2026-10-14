@@ -1,0 +1,31 @@
+### Ledger of a programme, newest first
+GET {{api}}/v1/audit/ledger?programId={{programId}}
+Authorization: Bearer {{auditor}}
+
+### Inbox: decisions on treasury messages
+GET {{api}}/v1/audit/inbox?programId={{programId}}
+Authorization: Bearer {{auditor}}
+
+### Rejected treasury messages
+GET {{api}}/v1/audit/inbox?outcome=REJECTED
+Authorization: Bearer {{auditor}}
+
+### Parked messages still waiting
+GET {{api}}/v1/audit/parked?unresolved=true
+Authorization: Bearer {{auditor}}
+
+### Funding history of a reservation
+GET {{api}}/v1/audit/fundings?reservationId={{reservationId}}
+Authorization: Bearer {{auditor}}
+
+### Outbox events not published yet
+GET {{api}}/v1/audit/outbox?unpublished=true
+Authorization: Bearer {{auditor}}
+
+### Decline journal
+GET {{api}}/v1/audit/declines?code=INSUFFICIENT_CAPACITY
+Authorization: Bearer {{auditor}}
+
+### Internal reconciliation on demand
+GET {{api}}/v1/audit/reconciliation
+Authorization: Bearer {{auditor}}
