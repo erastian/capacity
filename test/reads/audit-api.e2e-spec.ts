@@ -5,7 +5,7 @@ import type { RawMessage } from '../../src/treasury/adapter/envelope.types.js';
 import { InboundProcessor } from '../../src/treasury/inbound.processor.js';
 import { startApp } from '../support/app.js';
 import { CapturingPublisher } from '../support/capturing-publisher.js';
-import { closeDb, unique } from '../support/db.js';
+import { closeDb, db, unique } from '../support/db.js';
 import { token } from '../support/issuer.js';
 
 let offset = 0n;
@@ -179,9 +179,12 @@ describe('audit and break journals', () => {
 
     it('shows the outbox by programme, type and publication', async () => {
       const created = (await get('auditor', `/v1/audit/outbox?programId=${programId}&type=RESERVATION_CREATED`)).json();
-      expect(created.items).toEqual([expect.objectContaining({ type: 'RESERVATION_CREATED', partitionKey: programId, publishedAt: null })]);
+      expect(created.items).toEqual([expect.objectContaining({ type: 'RESERVATION_CREATED', partitionKey: programId })]);
+
+      await db().query('UPDATE outbox_event SET published_at = now() WHERE event_id = $1', [created.items[0].eventId]);
       const unpublished = (await get('auditor', `/v1/audit/outbox?programId=${programId}&unpublished=true&limit=200`)).json();
-      expect(unpublished.items.length).toBeGreaterThan(1);
+      expect(unpublished.items.every((item: { publishedAt: string | null }) => item.publishedAt === null)).toBe(true);
+      expect(unpublished.items.map((item: { eventId: string }) => item.eventId)).not.toContain(created.items[0].eventId);
     });
 
     it('keeps the full decline journal for auditors', async () => {

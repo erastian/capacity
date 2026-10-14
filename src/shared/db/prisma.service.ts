@@ -1,7 +1,7 @@
 import {
   HttpStatus,
   Injectable,
-  OnModuleDestroy,
+  OnApplicationShutdown,
   OnModuleInit,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -17,7 +17,7 @@ const TRANSACTION_UNAVAILABLE = 'P2028';
 @Injectable()
 export class PrismaService
   extends PrismaClient
-  implements OnModuleInit, OnModuleDestroy
+  implements OnModuleInit, OnApplicationShutdown
 {
   private readonly maxWait: number;
   private readonly timeout: number;
@@ -37,7 +37,7 @@ export class PrismaService
     await this.$connect();
   }
 
-  async onModuleDestroy() {
+  async onApplicationShutdown() {
     await this.$disconnect();
   }
 

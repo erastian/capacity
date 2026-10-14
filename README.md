@@ -8,8 +8,6 @@ A NestJS service that answers one question for a supply chain finance (payables 
 
 Key decisions in one breath: Postgres is the single source of truth and the capacity invariant is held by one conditional `UPDATE` under a row lock (no Redis, no distributed locks); every treasury message is decided exactly once (inbox), out-of-order data is parked rather than rejected, every outgoing event goes through a transactional outbox, money is `decimal` end to end and amounts travel as strings, and every journal is append-only and enforced by database grants, not by code discipline.
 
-A detailed design specification (`specifications.md`, ~800 lines: data model, state machines, message contract, decision tables, reason codes) is available on request.
-
 ## Requirements
 
 - **Docker** with Docker Compose v2, and **internet access to pull images** on first run:
@@ -70,7 +68,9 @@ Modules by subject: `reservations` (reserve + reads), `treasury` (inbound adapte
 
 Exposure in the programme currency is `ceil(outstanding × valuation rate, 4)`; a release returns `exposure before − exposure after`, so the last payment returns the exact remainder and exposure is never understated.
 
-**Treasury message**, one transaction per message: lock the programme → duplicate check (inbox and parked queue) → adapter turns the envelope into a command → pure decision → effects (balances, ledger, breaks, outbox) → status `ACCP` / `RJCT` / `PDNG` to `capacity.message-status`. The Kafka offset is committed only after the database commit. Messages that lack data (programme not created yet, FX quote not arrived, an earlier message of the same reservation still waiting) are **parked**, not rejected, and replayed in treasury order as soon as the data arrives; the outcome does not depend on arrival timing.
+**Treasury message**, one transaction per message: lock the programme → duplicate check (inbox and parked queue) → adapter turns the envelope into a command → pure decision → effects (balances, ledger, breaks, outbox) → status `ACCP` / `RJCT` / `PDNG` to `capacity.message-status`. The Kafka offset is committed only after the database commit. Messages that lack data (programme not created yet, FX quote not arrived, an earlier message of the same reservation still waiting) are **parked**, not rejected, and replayed in treasury order as soon as the data arrives; the outcome does not depend on arrival timing. A periodic sweep (`PARKED_SWEEP_INTERVAL_MS`) replays whatever a failed wake-up left behind and completes reconciliation batches whose last snapshot is already in.
+
+**Failures on the consumer path**: a transient error (database, broker) is retried with backoff and the stream is reopened after a broker error; `/health/ready` reports not-ready while nothing is consumed. A message that fails on its data (a Postgres data exception or CHECK violation) is not retried forever: it is recorded as `RJCT PROCESSING_FAILED`, copied to `capacity.dlq` and raises `POISON_MESSAGE`.
 
 **Outbox relay**: one leader via a session advisory lock, batches in id order, idempotent producer with `acks=all`, `published_at` set only after the broker acknowledges. Delivery is at least once; consumers deduplicate by `event_id`.
 
@@ -91,12 +91,12 @@ All endpoints require a bearer JWT from the identity provider (signature via JWK
 | `GET /v1/breaks`, `GET /v1/programs/:id/breaks` | `breaks:read` | operator, auditor | reconciliation breaks with treasury |
 | `GET /v1/audit/{ledger,inbox,parked,fundings,outbox,declines}` | `audit:read` | auditor | append-only journals |
 | `GET /v1/audit/reconciliation` | `audit:read` | auditor | internal reconciliation on demand |
-| `GET /health/live`, `GET /health/ready` | — | public | probes |
+| `GET /health/live`, `GET /health/ready` | — | public | probes; ready checks the database and that the treasury consumer is consuming |
 
 **Idempotency of `POST /v1/reservations`** (following the IETF `Idempotency-Key` draft):
 - The client generates the key, one per logical reservation attempt (a UUID or `invoiceId:attempt`), and stores it before sending, in the same transaction that approves the invoice (an outbox on the client side). A retry after a timeout, a lost connection or a crash then reuses the key and gets the stored response back (`Idempotent-Replayed: true`) instead of creating a second reservation.
 - A new attempt after circumstances change (the programme was suspended and is active again) uses a new key: one key, one outcome.
-- Keys are scoped to the calling client (`sub`), 8–255 characters of `[A-Za-z0-9._:-]`, kept for `IDEMPOTENCY_TTL_SECONDS` (7 days). The same key with a different body is `422 IDEMPOTENCY_KEY_REUSED`.
+- Keys are scoped to the calling client (`sub`), 8–255 characters of `[A-Za-z0-9._:-]`, kept for at least `IDEMPOTENCY_TTL_SECONDS` (7 days) and until the next cleanup run (stored outcomes are immutable, so an expired key is reusable only once the cleanup has removed it). The same key with a different body is `422 IDEMPOTENCY_KEY_REUSED`.
 - Stored: every outcome of an attempt that reached execution — success and business errors (`404`, `409`, `422` declines). Not stored: `401`, `403`, `422 VALIDATION_FAILED` and `5xx` (nothing happened, a corrected retry with the same key is legitimate).
 - A retry that lost its key still cannot double-reserve: `invoiceId` is unique, the answer is `409 INVOICE_ALREADY_RESERVED` with the existing reservation in the body, so the client can reconcile without manual work.
 
@@ -112,7 +112,7 @@ The service checks scopes only; roles are the identity provider's configuration 
 | `capacity.message-status` | key of the original message | capacity → treasury |
 | `capacity.dlq` | original key | capacity → ops |
 
-Envelope: `messageId`, `type`, `schemaVersion`, `programId`, `batchId`, `version`, `asOf`, `payload`. Inbound types: `PROGRAM_SNAPSHOT`, `LIMIT_UPDATED`, `EXTERNAL_UTILIZATION_UPDATED`, `PROGRAM_STATUS_CHANGED`, `PROGRAM_REINSTATED`, `FX_RATE_PUBLISHED`, `INVOICE_FUNDED`, `INVOICE_FUNDING_RETURNED`, `INVOICE_PAYMENT_ALLOCATED`, `INVOICE_BALANCE_WRITTEN_OFF`, `INVOICE_FUNDING_CANCELLED`, `INVOICE_RELEASE_REVERSED`, `BREAK_RESOLVED`, `RECONCILIATION_BATCH_COMPLETED`. Amounts and rates are decimal strings with an explicit currency. Each programme field carries its own monotonic version; order comes from versions, not timestamps. Every message gets a status, modelled on ISO 20022 `pacs.002`: `ACCP`, `RJCT` with a reason code, or `PDNG` with what it waits for.
+Envelope: `messageId`, `type`, `schemaVersion`, `programId`, `batchId`, `version`, `asOf`, `payload`. Inbound types: `PROGRAM_SNAPSHOT`, `LIMIT_UPDATED`, `EXTERNAL_UTILIZATION_UPDATED`, `PROGRAM_STATUS_CHANGED`, `PROGRAM_REINSTATED`, `FX_RATE_PUBLISHED`, `INVOICE_FUNDED`, `INVOICE_FUNDING_RETURNED`, `INVOICE_PAYMENT_ALLOCATED`, `INVOICE_BALANCE_WRITTEN_OFF`, `INVOICE_FUNDING_CANCELLED`, `INVOICE_RELEASE_REVERSED`, `BREAK_RESOLVED`, `RECONCILIATION_BATCH_COMPLETED`. Amounts and rates are decimal strings with an explicit currency. Each programme field carries its own monotonic version; order comes from versions, not timestamps. Every message gets a status, modelled on ISO 20022 `pacs.002`: `ACCP`, `RJCT` with a reason code, or `PDNG` with what it waits for. Formal rejections (`INVALID_FORMAT`, `UNKNOWN_MESSAGE_TYPE`, `UNSUPPORTED_SCHEMA_VERSION`) and `PROCESSING_FAILED` are also copied to `capacity.dlq`; an unreadable envelope (not JSON, no `messageId`, a NUL character) goes to the DLQ only, since there is nothing to answer.
 
 ## Assumptions and trade-offs
 
@@ -121,9 +121,10 @@ Envelope: `messageId`, `type`, `schemaVersion`, `programId`, `batchId`, `version
 - `externalUtilized` from treasury never includes invoices reserved here; exposure of an invoice lives only in its reservation here.
 - `invoiceId` is a unique id from origination and is never reused; one invoice, one reservation for life.
 - Origination is the only REST writer and chooses the programme; cancellations go to treasury, which reports the outcome.
-- The treasury message contract is designed here as an assumption (`specifications.md` has the full contract and reason codes).
+- The treasury message contract is designed here as an assumption, summarised in [Kafka contract](#kafka-contract).
 - Limits are not hierarchical (obligor, group) and there are no sub-limits per supplier or tenor; treasury sets programme limits consistently with them.
 - No revaluation of FX exposure: exposure is fixed at the reservation rate. Banks revalue daily, and a currency move alone can cause a limit excess. Next step: `FX_REVALUATION` at the current valuation quote, a revaluation ledger entry, excess handled by the existing `overLimit` rules.
+- The payoff quote is informational and accepts a quote of any age: it returns the quote's `rateId` and `asOf`, the operator passes `rateId` to treasury with the allocation, and treasury checks the quote's validity under its own grace period. Reservations, by contrast, refuse a valuation quote older than `FX_RATE_MAX_AGE_SECONDS`.
 - No cross rates, holiday calendars, value dates, cut-offs or multiple legal entities. The business date uses `BUSINESS_TIMEZONE` (default `Europe/London`).
 - Treasury silence does not block reservations (an outage of Kafka or treasury would otherwise stop financing); it raises `TREASURY_DATA_STALE`.
 
@@ -143,6 +144,11 @@ Envelope: `messageId`, `type`, `schemaVersion`, `programId`, `batchId`, `version
 - Monitors keep their last state in memory: with several instances each logs its own transitions; Prometheus aggregates the gauges.
 - Records are never deleted by the module (except the outbox transport and expired idempotency keys). Retention follows the bank's policy (at least the regulatory minimum, e.g. FCA record keeping, but not forever under UK GDPR) and would use time partitions.
 - Scaling path for the relay: shard by `hash(program_id) % N`. An alternative to the relay is CDC (Debezium).
+- The DLQ is a copy for operations; there is no automatic redrive. A fixed message is resent by treasury under a new `messageId`.
+- A parked message that keeps failing on replay holds the queue of its programme (order is preserved over progress) and raises `PARKED_REPLAY_FAILED`; other programmes are not affected.
+- A message that reverses another programme's release (`PROGRAM_MISMATCH`) locks two programmes. With several instances on different partitions two such messages can deadlock; Postgres detects it within `deadlock_timeout` and the consumer retries. Locking in a fixed order is the fix if it shows up in practice.
+- Internal reconciliation on demand is not single-flight: two parallel calls do the same read-only work twice. The endpoint needs `audit:read` and its cost is bounded by the incremental design.
+- The metrics port is unauthenticated and listens on all interfaces, as Prometheus scraping usually is; access is restricted by network policy.
 - No generated OpenAPI/Swagger, a deliberate trade-off. The API is documented in the [API](#api) section above and as runnable requests in `http/*.http`.
 - `overrides` in `package.json` lift `mysql2` and `deepmerge-ts` inside the Prisma CLI (dev dependency, never in the runtime) past their advisories, since no patched Prisma 7.x exists. MySQL is not used and the config merge sees only the local `prisma.config.ts`. Remove them once a fixed Prisma release is out.
 
@@ -161,6 +167,7 @@ Rules Prisma cannot express (CHECK constraints, partial indexes, grants) are app
 npm test            # unit: domain decisions, adapter, money, versioning, pagination
 npm run test:e2e    # e2e on Testcontainers: real Postgres 17 and Kafka 4.3.1
 npm run lint        # oxlint
+npm run typecheck   # tsc over src, test and scripts
 ```
 
 E2e tests cover: every database guard (CHECKs and grants, per role), authentication and scopes, reserve (all decline paths, idempotency, 100 concurrent reservations against a limit of 60), every treasury message type and its decision table, parking and replay order, breaks and their closing conditions, reconciliation batches, read API visibility ("A does not see B" on every endpoint), audit journals, monitors, internal reconciliation and cleanup, and the real Kafka path (relay ordering, leader failover, consumer, DLQ, and payments releasing capacity end to end: REST reservation → allocation through the broker → `RESERVATION_RELEASED` back on the bus, including an invoice in another currency paid in a third one).
@@ -171,4 +178,4 @@ CI is not set up yet. Next step: a GitHub Actions pipeline running `npm ci`, lin
 
 Metrics on `:9464/metrics` (Prometheus): consumer lag, decisions by type and outcome, duplicates, dead letters, alerts, overdue reservations (funded vs unfunded), aged parked messages, stale programmes, internal reconciliation mismatches by check, plus default Node.js metrics. Correlation id comes from `X-Correlation-Id`, else `traceparent`, else is generated; it is returned in responses and carried into logs and outbox events.
 
-Alerts: `LIMIT_EXCESS`, `RESERVATION_OVERDUE`, `PARKED_MESSAGE_AGED`, `TREASURY_DATA_STALE`, `RECONCILIATION_BATCH_INCOMPLETE`, `FX_RATE_CONFLICT`, `DLQ_MESSAGE`, `INTERNAL_RECONCILIATION_FAILED`, `TREASURY_CLOCK_SKEW`, `CONSUMER_LAG`.
+Alerts: `LIMIT_EXCESS`, `RESERVATION_OVERDUE`, `PARKED_MESSAGE_AGED`, `TREASURY_DATA_STALE`, `RECONCILIATION_BATCH_INCOMPLETE`, `BATCH_CONFLICT`, `FX_RATE_CONFLICT`, `DLQ_MESSAGE`, `POISON_MESSAGE`, `PARKED_REPLAY_FAILED`, `INTERNAL_RECONCILIATION_FAILED`, `TREASURY_CLOCK_SKEW`, `CONSUMER_LAG`.

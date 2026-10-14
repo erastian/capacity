@@ -61,6 +61,15 @@ describe('authentication', () => {
     });
   });
 
+  it('reads the auth scheme case-insensitively', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/probe/write',
+      headers: { authorization: `bearer ${await token({ claims: { scope: 'reservations:write' } })}` },
+    });
+    expect(res.statusCode).toBe(200);
+  });
+
   it('keeps health public', async () => {
     expect((await get('/health/live')).statusCode).toBe(200);
   });

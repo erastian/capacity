@@ -3,6 +3,7 @@ import {
   type StartedPostgreSqlContainer,
 } from '@testcontainers/postgresql';
 import { execFileSync } from 'node:child_process';
+import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
 import type { TestProject } from 'vitest/node';
 import './vitest.types.js';
@@ -39,7 +40,8 @@ export async function setup(project: TestProject): Promise<void> {
     migrator: url('capacity_migrator'),
   };
 
-  execFileSync('npx', ['prisma', 'migrate', 'deploy'], {
+  const prismaCli = createRequire(import.meta.url).resolve('prisma/build/index.js');
+  execFileSync(process.execPath, [prismaCli, 'migrate', 'deploy'], {
     env: { ...process.env, MIGRATION_DATABASE_URL: databaseUrls.migrator },
     stdio: 'pipe',
   });

@@ -1,8 +1,8 @@
 import {
+  BeforeApplicationShutdown,
   Injectable,
   Logger,
   OnApplicationBootstrap,
-  OnApplicationShutdown,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import pg from 'pg';
@@ -12,6 +12,7 @@ import { EventPublisher } from './event-publisher.js';
 import type { OutboxRow, OutgoingMessage } from './outbox.types.js';
 
 const LEADER_LOCK = 'capacity:outbox-relay';
+const SERVER_KEEPALIVES = '-c tcp_keepalives_idle=30 -c tcp_keepalives_interval=10 -c tcp_keepalives_count=3';
 
 export function topicFor(type: string): string {
   return type === 'INBOUND_MESSAGE_STATUS' ? Topic.MessageStatus : Topic.ReservationEvents;
@@ -32,10 +33,11 @@ export function toMessage(row: OutboxRow): OutgoingMessage {
 }
 
 @Injectable()
-export class OutboxRelay implements OnApplicationBootstrap, OnApplicationShutdown {
+export class OutboxRelay implements OnApplicationBootstrap, BeforeApplicationShutdown {
   private readonly logger = new Logger(OutboxRelay.name);
   private readonly enabled: boolean;
   private readonly databaseUrl: string;
+  private readonly queryTimeout: number;
   private readonly pollInterval: number;
   private readonly batchSize: number;
   private readonly leaderRetry: number;
@@ -51,6 +53,7 @@ export class OutboxRelay implements OnApplicationBootstrap, OnApplicationShutdow
   ) {
     this.enabled = config.get('OUTBOX_RELAY_ENABLED', { infer: true });
     this.databaseUrl = config.get('DATABASE_URL', { infer: true });
+    this.queryTimeout = config.get('DB_TX_TIMEOUT_MS', { infer: true });
     this.pollInterval = config.get('OUTBOX_POLL_INTERVAL_MS', { infer: true });
     this.batchSize = config.get('OUTBOX_BATCH_SIZE', { infer: true });
     this.leaderRetry = config.get('OUTBOX_LEADER_RETRY_MS', { infer: true });
@@ -64,12 +67,11 @@ export class OutboxRelay implements OnApplicationBootstrap, OnApplicationShutdow
     if (this.enabled) this.schedule(0);
   }
 
-  async onApplicationShutdown(): Promise<void> {
+  async beforeApplicationShutdown(): Promise<void> {
     this.stopped = true;
     clearTimeout(this.timer);
     await this.running;
     await this.dropConnection();
-    await this.publisher.close();
   }
 
   private schedule(delay: number): void {
@@ -99,17 +101,32 @@ export class OutboxRelay implements OnApplicationBootstrap, OnApplicationShutdow
   }
 
   private async acquireLeadership(): Promise<boolean> {
-    const connection = new pg.Client({ connectionString: this.databaseUrl });
+    const connection = new pg.Client({
+      connectionString: this.databaseUrl,
+      keepAlive: true,
+      keepAliveInitialDelayMillis: 10_000,
+      connectionTimeoutMillis: this.queryTimeout,
+      query_timeout: this.queryTimeout,
+      statement_timeout: this.queryTimeout,
+      options: SERVER_KEEPALIVES,
+    });
     connection.on('error', (error) => {
       this.logger.warn(`Leader connection lost: ${error.message}`);
       if (this.connection === connection) void this.dropConnection();
     });
-    await connection.connect();
-    const { rows } = await connection.query<{ locked: boolean }>(
-      'SELECT pg_try_advisory_lock(hashtextextended($1, 0)) AS locked',
-      [LEADER_LOCK],
-    );
-    if (!rows[0]?.locked) {
+    let locked: boolean;
+    try {
+      await connection.connect();
+      const { rows } = await connection.query<{ locked: boolean }>(
+        'SELECT pg_try_advisory_lock(hashtextextended($1, 0)) AS locked',
+        [LEADER_LOCK],
+      );
+      locked = rows[0]?.locked === true;
+    } catch (error) {
+      await connection.end().catch(() => undefined);
+      throw error;
+    }
+    if (!locked) {
       await connection.end();
       return false;
     }

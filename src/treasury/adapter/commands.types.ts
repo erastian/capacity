@@ -154,4 +154,5 @@ export type Command =
 export type CommandResult =
   | { kind: 'command'; command: Command }
   | { kind: 'unsupported' }
+  | { kind: 'unsupported_version' }
   | { kind: 'invalid'; reason: string };

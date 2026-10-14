@@ -1,4 +1,4 @@
-import { Injectable, Logger, OnApplicationBootstrap, OnApplicationShutdown } from '@nestjs/common';
+import { BeforeApplicationShutdown, Injectable, Logger, OnApplicationBootstrap } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Gauge } from 'prom-client';
 import type { Env } from '../config/env.js';
@@ -49,7 +49,7 @@ class Collector {
 }
 
 @Injectable()
-export class InternalReconciliation implements OnApplicationBootstrap, OnApplicationShutdown {
+export class InternalReconciliation implements OnApplicationBootstrap, BeforeApplicationShutdown {
   private readonly logger = new Logger('InternalReconciliation');
   private readonly interval: number;
   private readonly settleMs: number;
@@ -81,7 +81,7 @@ export class InternalReconciliation implements OnApplicationBootstrap, OnApplica
     this.periodic.start(this.interval);
   }
 
-  async onApplicationShutdown(): Promise<void> {
+  async beforeApplicationShutdown(): Promise<void> {
     await this.periodic.stop();
   }
 

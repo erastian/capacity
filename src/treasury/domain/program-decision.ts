@@ -1,5 +1,6 @@
 import type { ProgramStatus } from '../../shared/domain/program.types.js';
 import { Decimal } from 'decimal.js';
+import '../../shared/money/precision.js';
 import type {
   Money,
   ProgramCommand,

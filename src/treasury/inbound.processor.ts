@@ -58,6 +58,8 @@ const effectiveAsOf = ({ envelope, coordinates }: Context): Date =>
 const snapshotBatch = (type: string, batchId: string | undefined): Pick<Decision, 'batch'> =>
   type === 'PROGRAM_SNAPSHOT' && batchId ? { batch: batchId } : {};
 
+const FORMAL_REASONS = new Set(['INVALID_FORMAT', 'UNKNOWN_MESSAGE_TYPE', 'UNSUPPORTED_SCHEMA_VERSION']);
+
 const RELEASE_EVENTS: Record<ReleaseReason, OutboundEventType> = {
   REPAYMENT: 'RESERVATION_RELEASED',
   WRITE_OFF: 'RESERVATION_RELEASED',
@@ -110,9 +112,42 @@ export class InboundProcessor {
       await this.deadLetters.send(raw, decision.deadLetter);
       this.metrics.deadLettered(decision.deadLetter);
     }
-    if (decision.batch) await this.batches.complete(decision.batch);
-    if (decision.wake) await this.resolveParked(decision.wake);
-    if (decision.wakeRate) await this.resolveAwaitingRate(decision.wakeRate);
+    try {
+      if (decision.batch) await this.batches.complete(decision.batch);
+      if (decision.wake) await this.resolveParked(decision.wake);
+      if (decision.wakeRate) await this.resolveAwaitingRate(decision.wakeRate);
+    } catch (error) {
+      this.logger.warn(`Follow-up of ${envelope.messageId} failed, the sweep retries it: ${(error as Error).message}`);
+    }
+  }
+
+  async rejectPoison(raw: RawMessage, error: Error): Promise<void> {
+    this.metrics.alert('POISON_MESSAGE', `${raw.topic}:${raw.partition}:${raw.offset} ${error.message}`);
+    const parsed = parseEnvelope(raw);
+    if (parsed.kind === 'readable' && KNOWN_TYPES.has(parsed.envelope.type)) {
+      const envelope = parsed.envelope;
+      const context: Context = {
+        envelope,
+        coordinates: { topic: raw.topic, partition: raw.partition, offset: raw.offset, timestamp: raw.timestamp },
+        partitionKey: raw.key ?? envelope.programId ?? envelope.messageId,
+        fromParked: false,
+      };
+      await this.prisma
+        .inTransaction(async (tx) => {
+          if (await this.repository.findInbox(tx, envelope.messageId)) return;
+          await this.repository.insertInbox(tx, envelope, context.coordinates, {
+            type: envelope.type,
+            outcome: 'REJECTED',
+            reason: 'PROCESSING_FAILED',
+            programId: null,
+            programExternalId: envelope.programId ?? null,
+          });
+          await this.status(tx, context, undefined, 'RJCT', { reason: 'PROCESSING_FAILED' });
+        })
+        .catch((cause: Error) => this.logger.error(`Poison message ${envelope.messageId} not recorded: ${cause.message}`));
+    }
+    await this.deadLetters.send(raw, 'PROCESSING_FAILED');
+    this.metrics.deadLettered('PROCESSING_FAILED');
   }
 
   async resolveAwaitingRate(rateId: string): Promise<void> {
@@ -144,7 +179,13 @@ export class InboundProcessor {
 
   async resolveAllParked(): Promise<void> {
     const programs = await this.prisma.inTransaction((tx) => this.repository.programsWithResolvableParked(tx));
-    for (const programExternalId of programs) await this.resolveParked(programExternalId);
+    for (const programExternalId of programs) {
+      try {
+        await this.resolveParked(programExternalId);
+      } catch (error) {
+        this.metrics.alert('PARKED_REPLAY_FAILED', `program ${programExternalId}: ${(error as Error).message}`);
+      }
+    }
   }
 
   private async decide(tx: Tx, context: Context): Promise<Decision> {
@@ -159,7 +200,12 @@ export class InboundProcessor {
 
     const result = toCommand(envelope);
     if (result.kind !== 'command') {
-      const reason = result.kind === 'invalid' ? 'INVALID_FORMAT' : 'UNKNOWN_MESSAGE_TYPE';
+      const reason =
+        result.kind === 'invalid'
+          ? 'INVALID_FORMAT'
+          : result.kind === 'unsupported_version' && KNOWN_TYPES.has(envelope.type)
+            ? 'UNSUPPORTED_SCHEMA_VERSION'
+            : 'UNKNOWN_MESSAGE_TYPE';
       await this.repository.insertInbox(tx, envelope, context.coordinates, {
         type: KNOWN_TYPES.has(envelope.type) ? envelope.type : null,
         outcome: 'REJECTED',
@@ -208,8 +254,9 @@ export class InboundProcessor {
       programExternalId: null,
     });
     if (outcome === 'REJECTED') {
-      this.logger.warn(
-        `BATCH_CONFLICT: batch ${command.batchId} announced ${command.programCount} programs, earlier ${existing!.programCount}`,
+      this.metrics.warning(
+        'BATCH_CONFLICT',
+        `batch ${command.batchId} announced ${command.programCount} programs, earlier ${existing!.programCount}`,
       );
       await this.status(tx, context, undefined, 'RJCT', { reason });
       return {};
@@ -500,8 +547,9 @@ export class InboundProcessor {
     });
 
     if (plan.outcome === 'REJECTED') {
-      this.logger.warn(
-        `FX_RATE_CONFLICT: ${quote.rateId} (${quote.from}/${quote.to} ${quote.rateType} v${quote.version}) conflicts with ${plan.conflictsWith}`,
+      this.metrics.warning(
+        'FX_RATE_CONFLICT',
+        `${quote.rateId} (${quote.from}/${quote.to} ${quote.rateType} v${quote.version}) conflicts with ${plan.conflictsWith}`,
       );
       await this.status(tx, context, undefined, 'RJCT', {
         reason: plan.reason,
@@ -526,8 +574,7 @@ export class InboundProcessor {
         force: true,
       });
       this.metrics.duplicate(inbox.outcome);
-      const formal = inbox.reason === 'INVALID_FORMAT' || inbox.reason === 'UNKNOWN_MESSAGE_TYPE';
-      return formal ? { deadLetter: inbox.reason! } : {};
+      return inbox.reason && FORMAL_REASONS.has(inbox.reason) ? { deadLetter: inbox.reason } : {};
     }
 
     const parked = await this.repository.findParked(tx, messageId);
@@ -641,7 +688,7 @@ export class InboundProcessor {
     if (!started && !ended) return;
 
     if (started) {
-      this.logger.warn(`LIMIT_EXCESS: program ${program.externalId} is over limit by ${formatCapacity(now)}`);
+      this.metrics.warning('LIMIT_EXCESS', `program ${program.externalId} is over limit by ${formatCapacity(now)}`);
     }
     await writeOutbox(tx, {
       type: started ? 'PROGRAM_LIMIT_EXCESS_STARTED' : 'PROGRAM_LIMIT_EXCESS_ENDED',

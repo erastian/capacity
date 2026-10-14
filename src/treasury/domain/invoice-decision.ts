@@ -45,6 +45,7 @@ function breakOn(
   reason: InvoiceBreakReason,
   blocking: boolean,
   details: Record<string, unknown>,
+  essence: Record<string, string> = {},
 ): InvoicePlan {
   return {
     outcome: 'REJECTED',
@@ -53,7 +54,7 @@ function breakOn(
       reason,
       blocking,
       reservationId: reservation.id,
-      essence: { reservationId: reservation.id },
+      essence: { reservationId: reservation.id, ...essence },
       details: { invoiceId: reservation.invoiceId, ...details },
     },
   };
@@ -283,7 +284,10 @@ function reversed(command: InvoiceReleaseReversed, reservation: ReservationView,
     });
   }
   const target = facts.target;
-  if (!target) return breakOn(reservation, 'UNKNOWN_RELEASE', true, { externalRef: command.externalRef });
+  if (!target) {
+    const externalRef = { externalRef: command.externalRef };
+    return breakOn(reservation, 'UNKNOWN_RELEASE', true, externalRef, externalRef);
+  }
   if (target.reason === 'REVERSAL') return { outcome: 'REJECTED', reason: 'RELEASE_NOT_REVERSIBLE' };
   if (target.reversed) return { outcome: 'REJECTED', reason: 'RELEASE_ALREADY_REVERSED' };
 

@@ -32,11 +32,17 @@ export function encodeCursor(key: readonly string[]): string {
   return Buffer.from(JSON.stringify(key)).toString('base64url');
 }
 
+const MAX_BIGINT = 2n ** 63n - 1n;
+
 export const CURSOR_PART = {
   uuid: (value: string) => isUUID(value),
-  instant: (value: string) => /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(value),
-  text: (value: string) => value.length > 0 && value.length <= 256,
-  integer: (value: string) => /^\d{1,19}$/.test(value),
+  instant: (value: string) => {
+    if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(value)) return false;
+    const date = new Date(value);
+    return !Number.isNaN(date.getTime()) && date.toISOString() === value;
+  },
+  text: (value: string) => value.length > 0 && value.length <= 256 && !value.includes('\0'),
+  integer: (value: string) => /^\d{1,19}$/.test(value) && BigInt(value) <= MAX_BIGINT,
 } as const;
 
 export function decodeCursor(

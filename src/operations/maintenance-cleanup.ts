@@ -1,4 +1,10 @@
-import { Injectable, Logger, OnApplicationBootstrap, OnApplicationShutdown } from '@nestjs/common';
+import {
+  BeforeApplicationShutdown,
+  Injectable,
+  Logger,
+  OnApplicationBootstrap,
+  OnApplicationShutdown,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import pg from 'pg';
 import type { Env } from '../config/env.js';
@@ -8,7 +14,7 @@ import type { CleanupResult } from './operations.types.js';
 const BATCH = 1000;
 
 @Injectable()
-export class MaintenanceCleanup implements OnApplicationBootstrap, OnApplicationShutdown {
+export class MaintenanceCleanup implements OnApplicationBootstrap, BeforeApplicationShutdown, OnApplicationShutdown {
   private readonly logger = new Logger('MaintenanceCleanup');
   private readonly pool?: pg.Pool;
   private readonly interval: number;
@@ -33,8 +39,11 @@ export class MaintenanceCleanup implements OnApplicationBootstrap, OnApplication
     this.periodic.start(this.interval);
   }
 
-  async onApplicationShutdown(): Promise<void> {
+  async beforeApplicationShutdown(): Promise<void> {
     await this.periodic.stop();
+  }
+
+  async onApplicationShutdown(): Promise<void> {
     await this.pool?.end();
   }
 

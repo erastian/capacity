@@ -1,5 +1,6 @@
 import { Decimal } from 'decimal.js';
 import { minorUnits } from './currency.js';
+import './precision.js';
 
 export const CAPACITY_SCALE = 4;
 

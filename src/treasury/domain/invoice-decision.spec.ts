@@ -435,6 +435,15 @@ describe('decideInvoiceCommand', () => {
       expect(rejected(plan)).toEqual({ reason, blocking, hasBreak });
     });
 
+    it('keys an unknown release break by the release it names, so two of them stay apart', () => {
+      const essence = (ref: string) => {
+        const plan = decideInvoiceCommand(reversal(ref), PROGRAM, partiallyPaid('400.00', '360.0000'), {});
+        return plan.outcome === 'REJECTED' ? plan.break?.essence : undefined;
+      };
+      expect(essence('A-7')).toMatchObject({ externalRef: 'A-7' });
+      expect(essence('A-7')).not.toEqual(essence('A-17'));
+    });
+
     it('treats the same reversal resent as stale and one of another release as a conflict', () => {
       const same = stored({ id: 'rel-r', reason: 'REVERSAL', externalRef: 'REV-1', reversesExternalRef: 'A-1' });
       expect(decideInvoiceCommand(reversal(), PROGRAM, reservation(), { sameRef: same })).toEqual({ outcome: 'STALE' });

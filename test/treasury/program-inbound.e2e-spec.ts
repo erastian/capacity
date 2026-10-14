@@ -256,6 +256,49 @@ describe('treasury program messages', () => {
     });
   });
 
+  describe('external utilization updates', () => {
+    const utilization = (programId: string, value: string, version: number, currency = 'EUR'): MessageInput => ({
+      type: 'EXTERNAL_UTILIZATION_UPDATED',
+      programId,
+      version,
+      payload: { externalUtilized: { amount: value, currency } },
+    });
+
+    it('apply newer versions, ignore older ones and record the ledger', async () => {
+      const programId = unique('P');
+      await send(snapshot(programId));
+      const newer = await send(utilization(programId, '250', 4));
+      const older = await send(utilization(programId, '50', 2));
+
+      const row = await program(programId);
+      expect(row.external_utilized).toBe('250.0000');
+      expect(row.external_utilized_version).toBe('4');
+      expect(await inbox(newer.messageId)).toMatchObject({ outcome: 'APPLIED' });
+      expect(await inbox(older.messageId)).toMatchObject({ outcome: 'STALE' });
+      expect((await ledger(row.id)).map((entry) => [entry.type, entry.external_utilized_delta])).toEqual([
+        ['TREASURY_SNAPSHOT', '100.0000'],
+        ['TREASURY_EXTERNAL_UTILIZATION_UPDATED', '150.0000'],
+      ]);
+    });
+
+    it('raise the limit excess when utilization outgrows the limit', async () => {
+      const programId = unique('P');
+      await send(snapshot(programId));
+      await send(utilization(programId, '1200', 4));
+      expect(await events(programId, 'PROGRAM_LIMIT_EXCESS_STARTED')).toEqual([
+        expect.objectContaining({ overLimit: '200.0000', currency: 'EUR' }),
+      ]);
+    });
+
+    it('reject utilization in a foreign currency with a blocking break', async () => {
+      const programId = unique('P');
+      await send(snapshot(programId));
+      const message = await send(utilization(programId, '250', 4, 'USD'));
+      expect(await inbox(message.messageId)).toMatchObject({ outcome: 'REJECTED', reason: 'CURRENCY_MISMATCH' });
+      expect((await program(programId)).open_blocking_breaks).toBe(1);
+    });
+  });
+
   describe('status', () => {
     it('suspends, refuses to reopen a closed programme and reinstates by amendment', async () => {
       const programId = unique('P');
@@ -352,6 +395,27 @@ describe('treasury program messages', () => {
     it('rejects an unknown type with an empty type column', async () => {
       const message = await send({ type: 'SOMETHING_NEW', programId: unique('P') });
       expect(await inbox(message.messageId)).toEqual({ type: null, outcome: 'REJECTED', reason: 'UNKNOWN_MESSAGE_TYPE' });
+    });
+
+    it('rejects a known type in an unsupported schema version under its own reason', async () => {
+      const before = publisher.sent.length;
+      const message = await send({ ...limit(unique('P'), '500', 4), schemaVersion: 2 });
+      expect(await inbox(message.messageId)).toEqual({
+        type: 'LIMIT_UPDATED',
+        outcome: 'REJECTED',
+        reason: 'UNSUPPORTED_SCHEMA_VERSION',
+      });
+      expect(publisher.sent.slice(before).map((m) => m.headers['dlq-reason'])).toEqual(['UNSUPPORTED_SCHEMA_VERSION']);
+    });
+
+    it('records a message that fails on its data as rejected and copies it to the DLQ', async () => {
+      const message = raw(limit(unique('P'), '500', 4));
+      const before = publisher.sent.length;
+      await processor.rejectPoison(message, new Error('numeric field overflow'));
+
+      expect(await inbox(message.messageId)).toEqual({ type: 'LIMIT_UPDATED', outcome: 'REJECTED', reason: 'PROCESSING_FAILED' });
+      expect((await statuses(message.messageId)).map((s) => s.status)).toEqual(['RJCT']);
+      expect(publisher.sent.slice(before).map((m) => m.headers['dlq-reason'])).toEqual(['PROCESSING_FAILED']);
     });
   });
 });

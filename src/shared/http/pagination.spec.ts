@@ -20,6 +20,18 @@ describe('cursor', () => {
   ])('rejects %s as a validation error', (_, cursor) => {
     expect(() => decodeCursor(cursor, PARTS)).toThrow(AppError);
   });
+
+  it.each([
+    ['an impossible date', CURSOR_PART.instant, '2026-13-40T10:00:00.000Z'],
+    ['an integer above bigint', CURSOR_PART.integer, '9223372036854775808'],
+    ['a NUL character', CURSOR_PART.text, 'a\u0000b'],
+  ])('rejects %s in a well-formed cursor', (_, part, value) => {
+    expect(() => decodeCursor(encodeCursor([value]), [part])).toThrow(AppError);
+  });
+
+  it('accepts the bigint maximum', () => {
+    expect(decodeCursor(encodeCursor(['9223372036854775807']), [CURSOR_PART.integer])).toEqual(['9223372036854775807']);
+  });
 });
 
 describe('toPage', () => {

@@ -631,6 +631,27 @@ export class InboundRepository {
     return row && { batchId: row.batch_id, programCount: row.program_count, received: row.received, alertedAt: row.alerted_at };
   }
 
+  async completePendingBatches(tx: Tx): Promise<BatchProgress[]> {
+    const rows = await tx.$queryRaw<{ batch_id: string; program_count: number; received: number; alerted_at: Date | null }[]>`
+      UPDATE reconciliation_batch b SET completed_at = now()
+      FROM (
+        SELECT m.batch_id, count(DISTINCT m.program_external_id)::int AS received
+        FROM processed_message m
+        JOIN reconciliation_batch pending ON pending.batch_id = m.batch_id AND pending.completed_at IS NULL
+        WHERE m.type = 'PROGRAM_SNAPSHOT'
+        GROUP BY m.batch_id
+      ) s
+      WHERE b.batch_id = s.batch_id AND b.completed_at IS NULL AND s.received >= b.program_count
+      RETURNING b.batch_id, b.program_count, s.received, b.alerted_at
+    `;
+    return rows.map((row) => ({
+      batchId: row.batch_id,
+      programCount: row.program_count,
+      received: row.received,
+      alertedAt: row.alerted_at,
+    }));
+  }
+
   async flagOverdueBatches(tx: Tx): Promise<BatchProgress[]> {
     const rows = await tx.$queryRaw<{ batch_id: string; program_count: number; received: number; alerted_at: Date }[]>`
       UPDATE reconciliation_batch b SET alerted_at = now()

@@ -1,7 +1,7 @@
 {
   "name": "capacity",
   "version": "0.0.1",
-  "description": "",
+  "description": "Programme capacity and invoice reservation service: reserves credit capacity for invoices and keeps it in step with treasury over Kafka",
   "author": "Erastian",
   "private": true,
   "license": "UNLICENSED",
@@ -12,7 +12,8 @@
   "scripts": {
     "postinstall": "prisma generate",
     "build": "nest build",
-    "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
+    "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\" \"scripts/**/*.ts\"",
+    "typecheck": "tsc --noEmit",
     "start": "nest start",
     "start:dev": "nest start --watch",
     "start:debug": "nest start --debug --watch",

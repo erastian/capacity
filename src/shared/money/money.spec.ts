@@ -66,6 +66,12 @@ describe('exposure', () => {
     ).toBe('0.0001');
   });
 
+  it('rounds the exact product, not a 20-digit approximation of it', () => {
+    expect(
+      exposure(new Decimal('1000000000000000.0001'), new Decimal('1.000000000000000001')).toFixed(4),
+    ).toBe('1000000000000000.0012');
+  });
+
   it('formats with the requested places', () => {
     expect(formatAmount(new Decimal('100'), 2)).toBe('100.00');
   });

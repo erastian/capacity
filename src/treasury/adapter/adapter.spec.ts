@@ -38,12 +38,19 @@ describe('parseEnvelope', () => {
     ['no schemaVersion', envelope({ schemaVersion: undefined })],
     ['no asOf', envelope({ asOf: undefined })],
     ['asOf without zone', envelope({ asOf: '2026-10-13T10:00:00' })],
+    ['a NUL character in the payload', envelope({ payload: { reason: 'a\u0000b' } })],
+    ['a NUL character in a key', envelope({ payload: { 'a\u0000b': 'x' } })],
   ])('treats %s as unreadable', (_, value) => {
     expect(parseEnvelope(raw(value)).kind).toBe('unreadable');
   });
 
   it('reads a version given as a string', () => {
     expect(parse(envelope({ version: '9007199254740993' })).version).toBe(9007199254740993n);
+  });
+
+  it('reads versions up to the bigint maximum only', () => {
+    expect(parse(envelope({ version: '9223372036854775807' })).version).toBe(9223372036854775807n);
+    expect(parse(envelope({ version: '9223372036854775808' })).version).toBeUndefined();
   });
 });
 
@@ -78,11 +85,12 @@ describe('toCommand', () => {
     });
   });
 
-  it.each([
-    ['an unknown type', envelope({ type: 'SOMETHING_NEW' })],
-    ['an unsupported schema version', envelope({ schemaVersion: 2 })],
-  ])('reports %s as unsupported', (_, value) => {
-    expect(toCommand(parse(value)).kind).toBe('unsupported');
+  it('reports an unknown type as unsupported', () => {
+    expect(toCommand(parse(envelope({ type: 'SOMETHING_NEW' }))).kind).toBe('unsupported');
+  });
+
+  it('reports an unsupported schema version apart from an unknown type', () => {
+    expect(toCommand(parse(envelope({ schemaVersion: 2 }))).kind).toBe('unsupported_version');
   });
 
   describe('FX_RATE_PUBLISHED', () => {

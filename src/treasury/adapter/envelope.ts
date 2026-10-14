@@ -1,7 +1,8 @@
 import { isIdentifier } from '../../shared/domain/identifier.js';
-import type { EnvelopeResult, RawMessage } from './envelope.types.js';
+import type { EnvelopeResult, ParsedValue, RawMessage } from './envelope.types.js';
 
 const ISO_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,9})?(Z|[+-]\d{2}:\d{2})$/;
+const MAX_VERSION = 2n ** 63n - 1n;
 
 export function parseInstant(value: unknown): Date | undefined {
   if (typeof value !== 'string' || !ISO_INSTANT.test(value)) return undefined;
@@ -11,8 +12,20 @@ export function parseInstant(value: unknown): Date | undefined {
 
 export function parseVersion(value: unknown): bigint | undefined {
   if (typeof value === 'number' && Number.isSafeInteger(value) && value >= 0) return BigInt(value);
-  if (typeof value === 'string' && /^(0|[1-9]\d{0,18})$/.test(value)) return BigInt(value);
+  if (typeof value === 'string' && /^(0|[1-9]\d{0,18})$/.test(value)) {
+    const version = BigInt(value);
+    return version <= MAX_VERSION ? version : undefined;
+  }
   return undefined;
+}
+
+function parseWithoutNul(value: string): ParsedValue {
+  let nul = false;
+  const json: unknown = JSON.parse(value, (key, item: unknown) => {
+    if (key.includes('\0') || (typeof item === 'string' && item.includes('\0'))) nul = true;
+    return item;
+  });
+  return { json, nul };
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -22,12 +35,14 @@ function isObject(value: unknown): value is Record<string, unknown> {
 export function parseEnvelope(raw: RawMessage): EnvelopeResult {
   if (raw.value === null) return { kind: 'unreadable', reason: 'empty value' };
 
-  let json: unknown;
+  let parsed: ParsedValue;
   try {
-    json = JSON.parse(raw.value);
+    parsed = parseWithoutNul(raw.value);
   } catch {
     return { kind: 'unreadable', reason: 'value is not JSON' };
   }
+  if (parsed.nul) return { kind: 'unreadable', reason: 'value contains a NUL character' };
+  const json = parsed.json;
   if (!isObject(json)) return { kind: 'unreadable', reason: 'value is not an object' };
 
   const asOf = parseInstant(json.asOf);

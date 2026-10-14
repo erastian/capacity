@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, OnApplicationShutdown } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ProduceAcks, Producer, stringSerializers } from '@platformatic/kafka';
 import type { Env } from '../config/env.js';
@@ -7,7 +7,7 @@ import { EventPublisher } from './event-publisher.js';
 import type { OutgoingMessage } from './outbox.types.js';
 
 @Injectable()
-export class KafkaEventPublisher extends EventPublisher {
+export class KafkaEventPublisher extends EventPublisher implements OnApplicationShutdown {
   private readonly producer: Producer<string, string, string, string>;
 
   constructor(config: ConfigService<Env, true>) {
@@ -27,5 +27,9 @@ export class KafkaEventPublisher extends EventPublisher {
 
   async close(): Promise<void> {
     await this.producer.close();
+  }
+
+  async onApplicationShutdown(): Promise<void> {
+    await this.close();
   }
 }

@@ -71,6 +71,11 @@ export class InboundMetrics {
     this.logger.error(`${alert}: ${message}`);
   }
 
+  warning(alert: string, message: string): void {
+    this.alerts.inc({ alert });
+    this.logger.warn(`${alert}: ${message}`);
+  }
+
   snapshotBreak(result: string): void {
     this.snapshotBreaks.inc({ result });
   }

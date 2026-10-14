@@ -41,6 +41,16 @@ const quote = (patch: Partial<FxQuote> = {}): FxQuote => ({
 });
 
 describe('assess', () => {
+  it('declines an exposure beyond the column range as insufficient capacity, never storing it', () => {
+    const result = assess(
+      program({ creditLimit: new Decimal('9999999999999999.9999'), externalUtilized: new Decimal(0), reserved: new Decimal(0) }),
+      input({ currency: 'USD', originalAmount: new Decimal('9999999999999999.9999') }),
+      quote({ rate: new Decimal('99999999999999999999') }),
+      context,
+    );
+    expect(result).toMatchObject({ outcome: 'decline', code: 'INSUFFICIENT_CAPACITY' });
+  });
+
   it('reserves the nominal in the same currency', () => {
     const result = assess(program(), input(), undefined, context);
     expect(result).toMatchObject({ outcome: 'reserve' });

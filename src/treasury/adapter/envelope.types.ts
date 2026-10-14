@@ -18,6 +18,11 @@ export interface Envelope {
   payload: Record<string, unknown>;
 }
 
+export interface ParsedValue {
+  json: unknown;
+  nul: boolean;
+}
+
 export type EnvelopeResult =
   | { kind: 'readable'; envelope: Envelope }
   | { kind: 'unreadable'; reason: string };

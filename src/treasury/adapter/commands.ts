@@ -272,7 +272,7 @@ export function isInvoiceCommand(command: Command): command is InvoiceCommand {
 }
 
 export function toCommand(envelope: Envelope): CommandResult {
-  if (envelope.schemaVersion !== SUPPORTED_SCHEMA_VERSION) return { kind: 'unsupported' };
+  if (envelope.schemaVersion !== SUPPORTED_SCHEMA_VERSION) return { kind: 'unsupported_version' };
   try {
     const command = build(envelope);
     return command ? { kind: 'command', command } : { kind: 'unsupported' };

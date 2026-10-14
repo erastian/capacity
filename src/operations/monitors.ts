@@ -1,4 +1,4 @@
-import { Injectable, Logger, OnApplicationBootstrap, OnApplicationShutdown } from '@nestjs/common';
+import { BeforeApplicationShutdown, Injectable, Logger, OnApplicationBootstrap } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Gauge } from 'prom-client';
 import type { Env } from '../config/env.js';
@@ -9,7 +9,7 @@ import { Periodic } from '../shared/time/periodic.js';
 import type { AgedParkedMessage, MonitorSnapshot, OverdueReservation, StaleProgram } from './operations.types.js';
 
 @Injectable()
-export class OperationalMonitors implements OnApplicationBootstrap, OnApplicationShutdown {
+export class OperationalMonitors implements OnApplicationBootstrap, BeforeApplicationShutdown {
   private readonly logger = new Logger('Monitors');
   private readonly timeZone: string;
   private readonly parkedMaxAgeSeconds: number;
@@ -57,7 +57,7 @@ export class OperationalMonitors implements OnApplicationBootstrap, OnApplicatio
     this.periodic.start(this.interval);
   }
 
-  async onApplicationShutdown(): Promise<void> {
+  async beforeApplicationShutdown(): Promise<void> {
     await this.periodic.stop();
   }
 

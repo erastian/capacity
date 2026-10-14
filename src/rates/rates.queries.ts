@@ -11,6 +11,9 @@ const CURRENT = `
          least(as_of, kafka_timestamp) AS effective_as_of
   FROM fx_rate`;
 
+const RATE_TYPES: readonly string[] = ['VALUATION', 'CONVERSION'] satisfies RateType[];
+const RATE_TYPE = (value: string) => RATE_TYPES.includes(value);
+
 function toQuote(row: QuoteRow): CurrentQuote {
   return {
     rateId: row.external_id,
@@ -58,13 +61,13 @@ export class RateQueries {
     limit: number,
     cursor: string | undefined,
   ): Promise<Page<QuoteView>> {
-    const after = decodeCursor(cursor, [CURSOR_PART.text, CURSOR_PART.text, CURSOR_PART.text]);
+    const after = decodeCursor(cursor, [CURSOR_PART.text, CURSOR_PART.text, RATE_TYPE]);
     const rows = await this.prisma.$queryRawUnsafe<QuoteRow[]>(
       `${CURRENT}
        WHERE ($1::text IS NULL OR from_currency = $1)
          AND ($2::text IS NULL OR to_currency = $2)
          AND ($3::text IS NULL OR rate_type::text = $3)
-         AND ($4::text IS NULL OR (from_currency::text, to_currency::text, rate_type::text) > ($4, $5, $6))
+         AND ($4::text IS NULL OR (from_currency::text, to_currency::text, rate_type) > ($4, $5, $6::"FxRateType"))
        ORDER BY from_currency, to_currency, rate_type, version DESC
        LIMIT $7`,
       filter.from ?? null,

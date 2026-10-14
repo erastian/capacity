@@ -140,6 +140,11 @@ export class Env {
   @Min(1000)
   RECONCILIATION_BATCH_CHECK_INTERVAL_MS = 60_000;
 
+  @Type(() => Number)
+  @IsInt()
+  @Min(1000)
+  PARKED_SWEEP_INTERVAL_MS = 60_000;
+
   @BooleanFlag()
   PUBLISH_ACCEPTED_STATUS = false;
 

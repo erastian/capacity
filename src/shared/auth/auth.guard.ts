@@ -12,7 +12,7 @@ import type { Principal } from './principal.types.js';
 import type { Scope } from './scopes.js';
 import { TokenVerifier } from './token-verifier.js';
 
-const BEARER = /^Bearer ([A-Za-z0-9._~+/-]+=*)$/;
+const BEARER = /^Bearer +([A-Za-z0-9._~+/-]+=*)$/i;
 
 function unauthenticated(): AppError {
   return new AppError(HttpStatus.UNAUTHORIZED, 'UNAUTHENTICATED', {
