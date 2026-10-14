@@ -119,6 +119,20 @@ Signing keys are cached without expiry and refreshed in the background every 10 
 
 Envelope: `messageId`, `type`, `schemaVersion`, `programId`, `batchId`, `version`, `asOf`, `payload`. Inbound types: `PROGRAM_SNAPSHOT`, `LIMIT_UPDATED`, `EXTERNAL_UTILIZATION_UPDATED`, `PROGRAM_STATUS_CHANGED`, `PROGRAM_REINSTATED`, `FX_RATE_PUBLISHED`, `INVOICE_FUNDED`, `INVOICE_FUNDING_RETURNED`, `INVOICE_PAYMENT_ALLOCATED`, `INVOICE_BALANCE_WRITTEN_OFF`, `INVOICE_FUNDING_CANCELLED`, `INVOICE_RELEASE_REVERSED`, `BREAK_RESOLVED`, `RECONCILIATION_BATCH_COMPLETED`. Amounts and rates are decimal strings with an explicit currency. Each programme field carries its own monotonic version; order comes from versions, not timestamps. Every message gets a status, modelled on ISO 20022 `pacs.002`: `ACCP`, `RJCT` with a reason code, or `PDNG` with what it waits for. Formal rejections (`INVALID_FORMAT`, `UNKNOWN_MESSAGE_TYPE`, `UNSUPPORTED_SCHEMA_VERSION`) and `PROCESSING_FAILED` are also copied to `capacity.dlq`; an unreadable envelope (not JSON, no `messageId`, a NUL character) goes to the DLQ only, since there is nothing to answer.
 
+Outgoing events share one envelope: `eventId`, `schemaVersion` (1), `type`, `occurredAt`, `correlationId`, `data`; Kafka headers repeat `event-id`, `event-type` and `correlation-id`. Amounts are decimal strings: invoice amounts at the currency's minor units, capacity amounts (programme currency) at 4 places. `data` by type:
+
+| Type | `data` |
+|---|---|
+| `RESERVATION_CREATED` | `reservationId`, `programId`, `invoiceId`, `status`, `originalAmount`, `originalCurrency`, `amount`, `currency`, `fxRateId`, `dueDate`, `outstanding`, `capacityOutstanding`, `reservedAfter`, `available` |
+| `RESERVATION_RELEASED`, `RESERVATION_CANCELLED`, `RESERVATION_RELEASE_REVERSED` | `reservationId`, `programId`, `invoiceId`, `releaseId`, `externalRef`, `reason`, `reversesReleaseId`, `cancellationReason`, `writeOffReason`, `originalAmount`, `originalCurrency`, `amount`, `currency`, `status`, `outstanding`, `capacityOutstanding`, `reservedAfter`, `available` (amounts of this release; balances after it) |
+| `RESERVATION_DECLINED` | `programId`, `invoiceId`, `requestedAmount`, `requestedCurrency`, `code`, `details` |
+| `PROGRAM_BREAK_OPENED` | `breakId`, `programId`, `reservationId`, `reason`, `blocking`, `messageId`, `details` |
+| `PROGRAM_BREAK_RESOLVED` | `breakId`, `programId`, `reservationId`, `reason`, `blocking`, `resolutionMessageId` |
+| `PROGRAM_LIMIT_EXCESS_STARTED`, `PROGRAM_LIMIT_EXCESS_ENDED` | `programId`, `overLimit` (`0.0000` on `ENDED`), `currency`, `creditLimit`, `externalUtilized`, `reserved`, `causeMessageId` |
+| `INBOUND_MESSAGE_STATUS` | `messageId`, `status`, `reason`, `awaitingKind`, `awaitingRef`, `references`, `asOf` |
+
+A new field is added within `schemaVersion` 1; renaming or removing one raises the version.
+
 ## Assumptions and trade-offs
 
 **Domain**
@@ -158,7 +172,7 @@ Envelope: `messageId`, `type`, `schemaVersion`, `programId`, `batchId`, `version
 - The DLQ is a copy for operations; there is no automatic redrive. A fixed message is resent by treasury under a new `messageId`.
 - A parked message whose replay fails raises `PARKED_REPLAY_FAILED` and holds the queue of its programme until it succeeds or is rejected as `PROCESSING_FAILED`; a transient error (the database is down) holds it for as long as it lasts. Replay attempts are counted in memory, so a restart starts the count again. The DLQ copy of a parked message is its envelope as stored, not the original bytes.
 - A message that reverses another programme's release (`PROGRAM_MISMATCH`) locks two programmes. With several instances on different partitions two such messages can deadlock; Postgres detects it within `deadlock_timeout` and the consumer retries (on the parked sweep the replay waits for the next sweep). Locking in a fixed order is the fix if it shows up in practice.
-- Reservation `created_at` and the `occurredAt` of `RESERVATION_CREATED` are the transaction start time (`now()` in Postgres), so they are not strictly ordered with the ledger; order comes from ledger and outbox ids.
+- Reservation `created_at` is the transaction start time (`now()` in Postgres) and `occurredAt` of events is the application clock, so neither is strictly ordered with the ledger; order comes from ledger and outbox ids.
 - A break is keyed by its reason and an essence; for `FUNDING_CONFLICT`, `OVERPAYMENT`, `EXTERNAL_REF_CONFLICT` and similar the essence is the reservation, so a second distinct problem of the same reason on the same reservation joins the open break instead of opening a new one.
 - The deadline of a reconciliation batch is the trailer's broker timestamp plus the grace period; a consumer catching up on a backlog can raise `RECONCILIATION_BATCH_INCOMPLETE` that clears once the snapshots are read.
 - A snapshot is applied whole or not at all: one invalid field (a status transition, a version conflict) rejects the newer limit and utilisation in it too, and the next snapshot carries them again.

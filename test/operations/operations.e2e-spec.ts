@@ -209,7 +209,7 @@ describe('operational jobs', () => {
       const key = unique('key');
       const { id } = await reserve(programId, key);
       await db().query(
-        `UPDATE outbox_event SET published_at = now() - interval '2 days' WHERE payload -> 'data' ->> 'id' = $1`,
+        `UPDATE outbox_event SET published_at = now() - interval '2 days' WHERE payload -> 'data' ->> 'reservationId' = $1`,
         [id],
       );
       await ownerDb().query(
@@ -221,7 +221,9 @@ describe('operational jobs', () => {
       const result = await cleanup.run();
       expect(result.outboxEvents).toBeGreaterThanOrEqual(1);
       expect(result.idempotencyRecords).toBeGreaterThanOrEqual(1);
-      expect((await db().query(`SELECT 1 FROM outbox_event WHERE payload -> 'data' ->> 'id' = $1`, [id])).rowCount).toBe(0);
+      expect(
+        (await db().query(`SELECT 1 FROM outbox_event WHERE payload -> 'data' ->> 'reservationId' = $1`, [id])).rowCount,
+      ).toBe(0);
       expect((await db().query('SELECT 1 FROM idempotency_record WHERE key = $1', [key])).rowCount).toBe(0);
     });
   });

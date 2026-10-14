@@ -110,7 +110,7 @@ describe('with Kafka', () => {
       expect(res.statusCode).toBe(201);
       const reservationId = res.json().id;
 
-      const [message] = await collect('capacity.reservation-events', (m) => json(m).data?.id === reservationId, 1);
+      const [message] = await collect('capacity.reservation-events', (m) => json(m).data?.reservationId === reservationId, 1);
       const value = json(message);
       expect(message.key).toBe(programId);
       expect(value).toMatchObject({ type: 'RESERVATION_CREATED', schemaVersion: 1 });
@@ -128,7 +128,7 @@ describe('with Kafka', () => {
       for (let i = 0; i < 10; i++) ids.push((await reserve(apps[0], programId)).json().id);
 
       const messages = await collect('capacity.reservation-events', (m) => m.key === programId, 10);
-      expect(messages.map((m) => json(m).data.id)).toEqual(ids);
+      expect(messages.map((m) => json(m).data.reservationId)).toEqual(ids);
     });
 
     it('elects a single leader and fails over when it stops', async () => {
@@ -146,7 +146,7 @@ describe('with Kafka', () => {
       await waitFor(() => apps[0].get(OutboxRelay).isLeader);
       const programId = await seedProgram();
       const id = (await reserve(apps[0], programId)).json().id;
-      const [message] = await collect('capacity.reservation-events', (m) => json(m).data?.id === id, 1);
+      const [message] = await collect('capacity.reservation-events', (m) => json(m).data?.reservationId === id, 1);
       expect(message.key).toBe(programId);
     });
   });

@@ -184,13 +184,19 @@ export class ReservationsService {
       created,
       after,
     );
+    const { id, program: balances, createdAt: _createdAt, ...reservation } = body;
     await writeOutbox(tx, {
       type: 'RESERVATION_CREATED',
       programId: program.id,
       partitionKey: program.externalId,
       correlationId: command.correlationId,
-      occurredAt: created.createdAt,
-      data: body,
+      occurredAt: context.now,
+      data: {
+        reservationId: id,
+        ...reservation,
+        reservedAfter: balances.reserved,
+        available: balances.available,
+      },
     });
     return { status: HttpStatus.CREATED, body };
   }

@@ -108,8 +108,15 @@ describe('POST /v1/reservations', () => {
       expect(outbox[0].payload).toMatchObject({
         schemaVersion: 1,
         type: 'RESERVATION_CREATED',
-        data: { id: res.json().id, invoiceId: body.invoiceId },
+        data: {
+          reservationId: res.json().id,
+          invoiceId: body.invoiceId,
+          programId,
+          reservedAfter: res.json().program.reserved,
+          available: res.json().program.available,
+        },
       });
+      expect(outbox[0].payload.data).not.toHaveProperty('program');
     });
 
     it('in another currency through the valuation rate, rounding up', async () => {
