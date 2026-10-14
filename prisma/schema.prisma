@@ -186,6 +186,7 @@ model Reservation {
   createdAt              DateTime             @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt              DateTime             @updatedAt @map("updated_at") @db.Timestamptz(3)
 
+  @@index([programId, createdAt(sort: Desc), id(sort: Desc)])
   @@map("reservation")
 }
 
@@ -362,6 +363,7 @@ model ReservationDecline {
 
   @@index([programId, createdAt(sort: Desc)])
   @@index([invoiceId])
+  @@index([invoiceId, createdBy, createdAt(sort: Desc)])
   @@map("reservation_decline")
 }
 

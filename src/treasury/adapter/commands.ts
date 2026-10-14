@@ -1,3 +1,4 @@
+import { isUUID } from 'class-validator';
 import { Decimal } from 'decimal.js';
 import type { ProgramStatus } from '../../shared/domain/program.types.js';
 import { isCurrency } from '../../shared/money/currency.js';
@@ -18,7 +19,6 @@ export const SUPPORTED_SCHEMA_VERSION = 1;
 
 const AMOUNT = /^(0|[1-9]\d{0,15})(\.\d{1,4})?$/;
 const RATE = /^(0|[1-9]\d{0,19})(\.\d{1,18})?$/;
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const STATUSES: readonly ProgramStatus[] = ['ACTIVE', 'SUSPENDED', 'CLOSED'];
 const RATE_TYPES: readonly FxRateType[] = ['VALUATION', 'CONVERSION'];
 const RATE_STATUSES: readonly FxRateStatus[] = ['ACTIVE', 'SUSPENDED'];
@@ -115,7 +115,7 @@ function fxRate(envelope: Envelope): Command {
 }
 
 function breakId(value: unknown, field: string): string {
-  if (typeof value !== 'string' || !UUID.test(value)) fail(`${field} must be a break id`);
+  if (typeof value !== 'string' || !isUUID(value)) fail(`${field} must be a break id`);
   return value.toLowerCase();
 }
 
