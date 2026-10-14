@@ -206,6 +206,134 @@ describe('with Kafka', () => {
       expect(json(status).data).toMatchObject({ status: 'ACCP', messageId });
     });
 
+    it('releases capacity when treasury allocates a payment to the invoice', async () => {
+      const programId = await seedProgram();
+      const created = await reserve(apps[0], programId);
+      expect(created.statusCode).toBe(201);
+      const { id: reservationId, invoiceId } = created.json();
+
+      await sendTreasury(programId, {
+        messageId: unique('m'),
+        type: 'INVOICE_PAYMENT_ALLOCATED',
+        schemaVersion: 1,
+        programId,
+        asOf: new Date().toISOString(),
+        payload: {
+          invoiceId,
+          allocationId: unique('A'),
+          paymentId: unique('PAY'),
+          payment: { amount: '4.00', currency: 'EUR' },
+          settledAmount: { amount: '4.00', currency: 'EUR' },
+        },
+      });
+
+      await waitFor(async () => {
+        const { rows } = await db().query('SELECT reserved FROM program WHERE external_id = $1', [programId]);
+        return rows[0]?.reserved === '6.0000';
+      });
+      const { rows } = await db().query('SELECT status::text AS status FROM reservation WHERE id = $1', [reservationId]);
+      expect(rows[0].status).toBe('PARTIALLY_RELEASED');
+
+      const [released] = await collect(
+        'capacity.reservation-events',
+        (m) => json(m).type === 'RESERVATION_RELEASED' && json(m).data?.reservationId === reservationId,
+        1,
+      );
+      expect(json(released).data).toMatchObject({
+        reason: 'REPAYMENT',
+        amount: '4.0000',
+        outstanding: '6.00',
+        reservedAfter: '6.0000',
+        status: 'PARTIALLY_RELEASED',
+      });
+    });
+
+    it('releases capacity for an invoice in another currency, paid in that currency and in a third one', async () => {
+      const quoteVersion = BigInt(Date.now());
+      const sendQuote = (rateId: string, from: string, to: string, rateType: string, rate: string, version: bigint) =>
+        producer.send({
+          messages: [
+            {
+              topic: 'treasury.fx-rates',
+              key: `${from}:${to}:${rateType}`,
+              value: JSON.stringify({
+                messageId: unique('m'),
+                type: 'FX_RATE_PUBLISHED',
+                schemaVersion: 1,
+                version: version.toString(),
+                asOf: new Date().toISOString(),
+                payload: { rateId, from, to, rateType, status: 'ACTIVE', rate },
+              }),
+            },
+          ],
+        });
+      const quoteStored = (rateId: string) =>
+        waitFor(async () => (await db().query('SELECT 1 FROM fx_rate WHERE external_id = $1', [rateId])).rowCount === 1);
+      const reservedOf = async (programId: string) =>
+        (await db().query('SELECT reserved FROM program WHERE external_id = $1', [programId])).rows[0]?.reserved;
+      const allocate = (programId: string, invoiceId: string, payment: { amount: string; currency: string }, settled: string, fxRateId?: string) =>
+        sendTreasury(programId, {
+          messageId: unique('m'),
+          type: 'INVOICE_PAYMENT_ALLOCATED',
+          schemaVersion: 1,
+          programId,
+          asOf: new Date().toISOString(),
+          payload: {
+            invoiceId,
+            allocationId: unique('A'),
+            paymentId: unique('PAY'),
+            payment,
+            settledAmount: { amount: settled, currency: 'AUD' },
+            ...(fxRateId ? { fxRateId } : {}),
+          },
+        });
+
+      const valuation = unique('R');
+      await sendQuote(valuation, 'AUD', 'EUR', 'VALUATION', '0.6', quoteVersion);
+      await quoteStored(valuation);
+
+      const programId = await seedProgram();
+      const created = await apps[0]!.inject({
+        method: 'POST',
+        url: '/v1/reservations',
+        headers: { authorization: `Bearer ${bearer}`, 'idempotency-key': unique('key') },
+        payload: { programId, invoiceId: unique('INV'), amount: '100.00', currency: 'AUD', dueDate: '2099-12-31' },
+      });
+      expect(created.statusCode).toBe(201);
+      const { id: reservationId, invoiceId } = created.json();
+      expect(await reservedOf(programId)).toBe('60.0000');
+
+      await allocate(programId, invoiceId, { amount: '10.00', currency: 'AUD' }, '10.00');
+      await waitFor(async () => (await reservedOf(programId)) === '54.0000');
+
+      const conversion = unique('R');
+      await sendQuote(conversion, 'HKD', 'AUD', 'CONVERSION', '0.2', quoteVersion);
+      await quoteStored(conversion);
+      await allocate(programId, invoiceId, { amount: '50.00', currency: 'HKD' }, '10.00', conversion);
+      await waitFor(async () => (await reservedOf(programId)) === '48.0000');
+
+      const released = await collect(
+        'capacity.reservation-events',
+        (m) => json(m).type === 'RESERVATION_RELEASED' && json(m).data?.reservationId === reservationId,
+        2,
+      );
+      expect(released.map((m) => json(m).data)).toMatchObject([
+        { originalAmount: '10.00', originalCurrency: 'AUD', amount: '6.0000', currency: 'EUR', outstanding: '90.00' },
+        { originalAmount: '10.00', originalCurrency: 'AUD', amount: '6.0000', currency: 'EUR', outstanding: '80.00' },
+      ]);
+
+      const card = await apps[0]!.inject({
+        method: 'GET',
+        url: `/v1/reservations/${reservationId}`,
+        headers: { authorization: `Bearer ${bearer}` },
+      });
+      expect(card.json().movements[1]).toMatchObject({
+        amount: { amount: '10.00', currency: 'AUD' },
+        payment: { amount: { amount: '50.00', currency: 'HKD' }, fx: { rateId: conversion, rate: '0.2' } },
+        outstandingAfter: { amount: '80.00', currency: 'AUD' },
+      });
+    });
+
     it('stores an FX quote from its own topic', async () => {
       const rateId = unique('R');
       await producer.send({
