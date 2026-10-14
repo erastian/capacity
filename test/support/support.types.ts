@@ -41,6 +41,7 @@ export interface ReceivedMessage {
 export interface ProgramMessageInput {
   type: string;
   programId?: string;
+  batchId?: string;
   version?: number | string;
   payload?: Record<string, unknown>;
   messageId?: string;

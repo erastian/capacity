@@ -14,11 +14,13 @@ import {
   stringDeserializers,
 } from '@platformatic/kafka';
 import type { Env } from '../config/env.js';
-import { isDataError } from '../shared/db/sql-state.js';
+import { isTransient } from '../shared/db/sql-state.js';
 import { kafkaConnection, Topic } from '../shared/kafka/kafka.options.js';
 import { Periodic } from '../shared/time/periodic.js';
 import type { RawMessage } from './adapter/envelope.types.js';
+import { InboundMetrics } from './inbound.metrics.js';
 import { InboundProcessor } from './inbound.processor.js';
+import { givesUp } from './retry-policy.js';
 
 const MAX_BACKOFF_MS = 30_000;
 const TOPICS = [Topic.ProgramCapacity, Topic.FxRates];
@@ -45,16 +47,18 @@ export class TreasuryConsumer implements OnApplicationBootstrap, BeforeApplicati
     () => this.processor.resolveAllParked(),
     (error) => this.logger.error(error),
   );
+  private readonly maxAttempts: number;
   private stream?: MessagesStream<string, string, string, string>;
   private loop?: Promise<void>;
-  private consuming = false;
   private stopped = false;
 
   constructor(
     private readonly processor: InboundProcessor,
+    private readonly metrics: InboundMetrics,
     config: ConfigService<Env, true>,
   ) {
     this.sweepInterval = config.get('PARKED_SWEEP_INTERVAL_MS', { infer: true });
+    this.maxAttempts = config.get('INBOUND_MAX_ATTEMPTS', { infer: true });
     if (config.get('TREASURY_CONSUMER_ENABLED', { infer: true })) {
       this.consumer = new Consumer({
         ...kafkaConnection(config),
@@ -63,11 +67,11 @@ export class TreasuryConsumer implements OnApplicationBootstrap, BeforeApplicati
         autocommit: false,
         maxWaitTime: 500,
       });
+      this.consumer.on('error', (error: Error) => {
+        this.logger.error(`Consumer group error: ${error.message}`);
+        this.stream?.destroy(error);
+      });
     }
-  }
-
-  get ready(): boolean {
-    return !this.consumer || this.consuming;
   }
 
   async onApplicationBootstrap(): Promise<void> {
@@ -94,7 +98,7 @@ export class TreasuryConsumer implements OnApplicationBootstrap, BeforeApplicati
           mode: MessagesStreamModes.COMMITTED,
           fallbackMode: MessagesStreamFallbackModes.EARLIEST,
         });
-        this.consuming = true;
+        this.metrics.consuming(true);
         failures = 0;
         this.logger.log(`Consuming ${TOPICS.join(', ')}`);
         for await (const message of this.stream) {
@@ -105,7 +109,7 @@ export class TreasuryConsumer implements OnApplicationBootstrap, BeforeApplicati
         if (this.stopped) return;
         this.logger.error(`Consumer stopped: ${(error as Error).message}`);
       }
-      this.consuming = false;
+      this.metrics.consuming(false);
       await this.stream?.close().catch(() => undefined);
       if (this.stopped) return;
       const delay = backoff(failures++);
@@ -115,16 +119,21 @@ export class TreasuryConsumer implements OnApplicationBootstrap, BeforeApplicati
   }
 
   private async handle(raw: RawMessage): Promise<boolean> {
-    for (let attempt = 0; !this.stopped; attempt++) {
+    for (let attempt = 1; !this.stopped; attempt++) {
       try {
         await this.processor.process(raw);
         return true;
       } catch (error) {
-        if (isDataError(error)) {
-          await this.processor.rejectPoison(raw, error as Error);
-          return true;
+        this.metrics.failed(isTransient(error));
+        if (givesUp(error, attempt, this.maxAttempts)) {
+          try {
+            await this.processor.rejectPoison(raw, error as Error);
+            return true;
+          } catch (cause) {
+            this.logger.error(`Poison message not recorded: ${(cause as Error).message}`);
+          }
         }
-        const delay = backoff(attempt);
+        const delay = backoff(attempt - 1);
         this.logger.error(`Processing failed, retrying in ${delay}ms: ${(error as Error).message}`);
         await new Promise((resolve) => setTimeout(resolve, delay));
       }

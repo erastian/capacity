@@ -1,5 +1,5 @@
 export type Numeric = { toString(): string };
 
 export interface DriverAdapterMeta {
-  driverAdapterError?: { cause?: { originalCode?: unknown } };
+  driverAdapterError?: { cause?: { originalCode?: unknown; kind?: unknown } };
 }

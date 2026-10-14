@@ -4,6 +4,7 @@ import type { Env } from '../config/env.js';
 import type { OutboundEventType } from '../outbox/outbox.types.js';
 import { writeOutbox } from '../outbox/outbox.writer.js';
 import { type Tx, PrismaService } from '../shared/db/prisma.service.js';
+import { isTransient } from '../shared/db/sql-state.js';
 import { minorUnits } from '../shared/money/currency.js';
 import { capacityOf } from '../shared/money/capacity.js';
 import type { CapacityBalances } from '../shared/money/capacity.types.js';
@@ -18,7 +19,7 @@ import type {
   ProgramSnapshot,
   ReconciliationBatchCompleted,
 } from './adapter/commands.types.js';
-import { parseEnvelope } from './adapter/envelope.js';
+import { parseEnvelope, serializeEnvelope } from './adapter/envelope.js';
 import type { RawMessage } from './adapter/envelope.types.js';
 import { DeadLetterPublisher } from './dead-letter.js';
 import { closureCondition, versionAbove } from './domain/break-closure.js';
@@ -41,8 +42,9 @@ import { InboxRepository, KNOWN_TYPES } from './persistence/inbox.repository.js'
 import { ProgramStateRepository } from './persistence/program.repository.js';
 import { QuoteRepository } from './persistence/quote.repository.js';
 import { SettlementRepository } from './persistence/settlement.repository.js';
-import type { AwaitingKind, Decision, ProcessingContext as Context } from './inbound.types.js';
+import type { AwaitingKind, Decision, ParkedRecord, ProcessingContext as Context } from './inbound.types.js';
 import { ReconciliationBatches } from './reconciliation-batches.js';
+import { givesUp } from './retry-policy.js';
 import { writeStatus } from './status.writer.js';
 
 const ZERO_BALANCES = (program: ProgramView): CapacityBalances => ({
@@ -63,7 +65,12 @@ const effectiveAsOf = ({ envelope, coordinates }: Context): Date =>
 const snapshotBatch = (type: string, batchId: string | undefined): Pick<Decision, 'batch'> =>
   type === 'PROGRAM_SNAPSHOT' && batchId ? { batch: batchId } : {};
 
-const FORMAL_REASONS = new Set(['INVALID_FORMAT', 'UNKNOWN_MESSAGE_TYPE', 'UNSUPPORTED_SCHEMA_VERSION']);
+const DEAD_LETTER_REASONS = new Set([
+  'INVALID_FORMAT',
+  'UNKNOWN_MESSAGE_TYPE',
+  'UNSUPPORTED_SCHEMA_VERSION',
+  'PROCESSING_FAILED',
+]);
 
 const RELEASE_EVENTS: Record<ReleaseReason, OutboundEventType> = {
   REPAYMENT: 'RESERVATION_RELEASED',
@@ -77,6 +84,8 @@ export class InboundProcessor {
   private readonly logger = new Logger(InboundProcessor.name);
   private readonly publishAccepted: boolean;
   private readonly batchGraceMs: number;
+  private readonly maxAttempts: number;
+  private readonly replayFailures = new Map<string, number>();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -94,6 +103,7 @@ export class InboundProcessor {
   ) {
     this.publishAccepted = config.get('PUBLISH_ACCEPTED_STATUS', { infer: true });
     this.batchGraceMs = config.get('RECONCILIATION_BATCH_GRACE_SECONDS', { infer: true }) * 1000;
+    this.maxAttempts = config.get('INBOUND_MAX_ATTEMPTS', { infer: true });
   }
 
   async process(raw: RawMessage): Promise<void> {
@@ -132,7 +142,6 @@ export class InboundProcessor {
   }
 
   async rejectPoison(raw: RawMessage, error: Error): Promise<void> {
-    this.metrics.alert('POISON_MESSAGE', `${raw.topic}:${raw.partition}:${raw.offset} ${error.message}`);
     const parsed = parseEnvelope(raw);
     if (parsed.kind === 'readable' && KNOWN_TYPES.has(parsed.envelope.type)) {
       const envelope = parsed.envelope;
@@ -142,22 +151,12 @@ export class InboundProcessor {
         partitionKey: raw.key ?? envelope.programId ?? envelope.messageId,
         fromParked: false,
       };
-      await this.prisma
-        .inTransaction(async (tx) => {
-          if (await this.inbox.findInbox(tx, envelope.messageId)) return;
-          await this.inbox.insertInbox(tx, envelope, context.coordinates, {
-            type: envelope.type,
-            outcome: 'REJECTED',
-            reason: 'PROCESSING_FAILED',
-            programId: null,
-            programExternalId: envelope.programId ?? null,
-          });
-          await this.status(tx, context, undefined, 'RJCT', { reason: 'PROCESSING_FAILED' });
-        })
-        .catch((cause: Error) => this.logger.error(`Poison message ${envelope.messageId} not recorded: ${cause.message}`));
+      await this.prisma.inTransaction(async (tx) => {
+        if (await this.inbox.findInbox(tx, envelope.messageId)) return;
+        await this.recordPoison(tx, context);
+      });
     }
-    await this.deadLetters.send(raw, 'PROCESSING_FAILED');
-    this.metrics.deadLettered('PROCESSING_FAILED');
+    await this.deadLetterPoison(raw, error);
   }
 
   async resolveAwaitingRate(rateId: string): Promise<void> {
@@ -167,21 +166,32 @@ export class InboundProcessor {
 
   async resolveParked(programExternalId: string): Promise<void> {
     for (;;) {
-      const decision = await this.prisma.inTransaction(async (tx) => {
-        const program = await this.programs.lockProgram(tx, programExternalId);
-        if (!program) return undefined;
-        const parked = await this.inbox.nextResolvableParked(tx, programExternalId);
-        if (!parked) return undefined;
+      const replay: { parked?: ParkedRecord } = {};
+      let decision: Decision | undefined;
+      try {
+        decision = await this.prisma.inTransaction(async (tx) => {
+          replay.parked = undefined;
+          const program = await this.programs.lockProgram(tx, programExternalId);
+          if (!program) return undefined;
+          const parked = await this.inbox.nextResolvableParked(tx, programExternalId);
+          if (!parked) return undefined;
+          replay.parked = parked;
 
-        const resolved = await this.decide(tx, {
-          envelope: parked.envelope,
-          coordinates: parked.coordinates,
-          partitionKey: programExternalId,
-          fromParked: true,
+          const resolved = await this.decide(tx, {
+            envelope: parked.envelope,
+            coordinates: parked.coordinates,
+            partitionKey: programExternalId,
+            fromParked: true,
+          });
+          if (!resolved.parked) await this.inbox.markResolved(tx, parked.messageId);
+          return resolved;
         });
-        if (!resolved.parked) await this.inbox.markResolved(tx, parked.messageId);
-        return resolved;
-      });
+      } catch (error) {
+        if (!replay.parked || !this.replayGivesUp(replay.parked.messageId, error)) throw error;
+        await this.rejectParked(programExternalId, replay.parked, error as Error);
+        continue;
+      }
+      if (replay.parked) this.replayFailures.delete(replay.parked.messageId);
       if (!decision) return;
       if (decision.batch) await this.batches.complete(decision.batch);
     }
@@ -196,6 +206,53 @@ export class InboundProcessor {
         this.metrics.alert('PARKED_REPLAY_FAILED', `program ${programExternalId}: ${(error as Error).message}`);
       }
     }
+  }
+
+  private replayGivesUp(messageId: string, error: unknown): boolean {
+    const attempts = (this.replayFailures.get(messageId) ?? 0) + 1;
+    this.metrics.failed(isTransient(error));
+    if (givesUp(error, attempts, this.maxAttempts)) {
+      this.replayFailures.delete(messageId);
+      return true;
+    }
+    this.replayFailures.set(messageId, attempts);
+    return false;
+  }
+
+  private async rejectParked(programExternalId: string, parked: ParkedRecord, error: Error): Promise<void> {
+    await this.prisma.inTransaction(async (tx) => {
+      await this.recordPoison(tx, {
+        envelope: parked.envelope,
+        coordinates: parked.coordinates,
+        partitionKey: programExternalId,
+        fromParked: true,
+      });
+      await this.inbox.markResolved(tx, parked.messageId);
+    });
+    await this.deadLetterPoison(
+      { ...parked.coordinates, key: programExternalId, value: serializeEnvelope(parked.envelope) },
+      error,
+    );
+  }
+
+  private async recordPoison(tx: Tx, context: Context): Promise<void> {
+    const { envelope } = context;
+    const program = envelope.programId ? await this.programs.lockProgram(tx, envelope.programId) : undefined;
+    await this.inbox.insertInbox(tx, envelope, context.coordinates, {
+      type: envelope.type,
+      outcome: 'REJECTED',
+      reason: 'PROCESSING_FAILED',
+      programId: program?.id ?? null,
+      programExternalId: envelope.programId ?? null,
+    });
+    await this.status(tx, context, program, 'RJCT', { reason: 'PROCESSING_FAILED' });
+    this.metrics.decided(envelope.type, 'REJECTED');
+  }
+
+  private async deadLetterPoison(raw: RawMessage, error: Error): Promise<void> {
+    await this.deadLetters.send(raw, 'PROCESSING_FAILED');
+    this.metrics.deadLettered('PROCESSING_FAILED');
+    this.metrics.alert('POISON_MESSAGE', `${raw.topic}:${raw.partition}:${raw.offset} ${error.message}`);
   }
 
   private async decide(tx: Tx, context: Context): Promise<Decision> {
@@ -584,7 +641,7 @@ export class InboundProcessor {
         force: true,
       });
       this.metrics.duplicate(inbox.outcome);
-      return inbox.reason && FORMAL_REASONS.has(inbox.reason) ? { deadLetter: inbox.reason } : {};
+      return inbox.reason && DEAD_LETTER_REASONS.has(inbox.reason) ? { deadLetter: inbox.reason } : {};
     }
 
     const parked = await this.inbox.findParked(tx, messageId);

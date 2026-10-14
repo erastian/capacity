@@ -8,6 +8,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import pg from 'pg';
 import type { Env } from '../config/env.js';
+import { boundedConnection } from '../shared/db/pg-options.js';
 import { Periodic } from '../shared/time/periodic.js';
 import type { CleanupResult } from './operations.types.js';
 
@@ -26,7 +27,10 @@ export class MaintenanceCleanup implements OnApplicationBootstrap, BeforeApplica
 
   constructor(config: ConfigService<Env, true>) {
     const url = config.get('MAINTENANCE_DATABASE_URL', { infer: true });
-    this.pool = url ? new pg.Pool({ connectionString: url, max: 1 }) : undefined;
+    this.pool = url
+      ? new pg.Pool({ ...boundedConnection(url, config.get('DB_TX_TIMEOUT_MS', { infer: true })), max: 1 })
+      : undefined;
+    this.pool?.on('error', (error) => this.logger.warn(`Maintenance connection lost: ${error.message}`));
     this.interval = config.get('CLEANUP_INTERVAL_MS', { infer: true });
     this.outboxRetentionSeconds = config.get('OUTBOX_RETENTION_SECONDS', { infer: true });
   }

@@ -1,5 +1,5 @@
 import { isIdentifier } from '../../shared/domain/identifier.js';
-import type { EnvelopeResult, ParsedValue, RawMessage } from './envelope.types.js';
+import type { Envelope, EnvelopeResult, ParsedValue, RawMessage } from './envelope.types.js';
 
 const ISO_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,9})?(Z|[+-]\d{2}:\d{2})$/;
 const MAX_VERSION = 2n ** 63n - 1n;
@@ -69,4 +69,12 @@ export function parseEnvelope(raw: RawMessage): EnvelopeResult {
       payload: isObject(json.payload) ? json.payload : {},
     },
   };
+}
+
+export function serializeEnvelope(envelope: Envelope): string {
+  return JSON.stringify({
+    ...envelope,
+    version: envelope.version?.toString(),
+    asOf: envelope.asOf.toISOString(),
+  });
 }

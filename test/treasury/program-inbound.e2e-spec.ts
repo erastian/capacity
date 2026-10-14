@@ -1,7 +1,10 @@
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
+import { Prisma } from '../../src/generated/prisma/client.js';
 import { EventPublisher } from '../../src/outbox/event-publisher.js';
 import type { RawMessage } from '../../src/treasury/adapter/envelope.types.js';
 import { InboundProcessor } from '../../src/treasury/inbound.processor.js';
+import { ProgramStateRepository } from '../../src/treasury/persistence/program.repository.js';
+import { givesUp } from '../../src/treasury/retry-policy.js';
 import { startApp } from '../support/app.js';
 import { CapturingPublisher } from '../support/capturing-publisher.js';
 import { closeDb, db, unique } from '../support/db.js';
@@ -20,6 +23,7 @@ function raw(input: MessageInput | string, key?: string): RawMessage & { message
           type: input.type,
           schemaVersion: input.schemaVersion ?? 1,
           programId: input.programId,
+          batchId: input.batchId,
           version: input.version,
           asOf: input.asOf ?? new Date(Date.now() - 1000).toISOString(),
           payload: input.payload ?? {},
@@ -346,6 +350,29 @@ describe('treasury program messages', () => {
       );
       expect(rows[0].n).toBe(0);
     });
+
+    it('reject a replay that fails on its data and let the next message through', async () => {
+      const programId = unique('P');
+      const first = await send(limit(programId, '500', 6));
+      const second = await send(limit(programId, '700', 9));
+      const overflow = new Prisma.PrismaClientKnownRequestError('numeric field overflow', {
+        code: 'P2010',
+        clientVersion: 'test',
+        meta: { driverAdapterError: { cause: { originalCode: '22003' } } },
+      });
+      const update = vi.spyOn(app.get(ProgramStateRepository), 'updateProgram').mockRejectedValueOnce(overflow);
+      const before = publisher.sent.length;
+
+      await send(snapshot(programId));
+      update.mockRestore();
+
+      expect(await inbox(first.messageId)).toEqual({ type: 'LIMIT_UPDATED', outcome: 'REJECTED', reason: 'PROCESSING_FAILED' });
+      expect((await statuses(first.messageId)).map((s) => s.status)).toEqual(['PDNG', 'RJCT']);
+      expect(await inbox(second.messageId)).toMatchObject({ outcome: 'APPLIED' });
+      expect((await program(programId)).credit_limit).toBe('700.0000');
+      const dead = publisher.sent.slice(before).filter((m) => m.headers['dlq-reason'] === 'PROCESSING_FAILED');
+      expect(dead.map((m) => JSON.parse(m.value).messageId)).toEqual([first.messageId]);
+    });
   });
 
   describe('redelivery', () => {
@@ -408,14 +435,29 @@ describe('treasury program messages', () => {
       expect(publisher.sent.slice(before).map((m) => m.headers['dlq-reason'])).toEqual(['UNSUPPORTED_SCHEMA_VERSION']);
     });
 
-    it('records a message that fails on its data as rejected and copies it to the DLQ', async () => {
-      const message = raw(limit(unique('P'), '500', 4));
-      const before = publisher.sent.length;
-      await processor.rejectPoison(message, new Error('numeric field overflow'));
+    it('rejects a message that fails on a Postgres data error and copies it to the DLQ again on redelivery', async () => {
+      const message = raw({
+        type: 'RECONCILIATION_BATCH_COMPLETED',
+        batchId: unique('B'),
+        payload: { programCount: 2 ** 31 },
+      });
+      const error: unknown = await processor.process(message).catch((cause: unknown) => cause);
+      expect(givesUp(error, 1, 10)).toBe(true);
 
-      expect(await inbox(message.messageId)).toEqual({ type: 'LIMIT_UPDATED', outcome: 'REJECTED', reason: 'PROCESSING_FAILED' });
+      const before = publisher.sent.length;
+      await processor.rejectPoison(message, error as Error);
+      expect(await inbox(message.messageId)).toEqual({
+        type: 'RECONCILIATION_BATCH_COMPLETED',
+        outcome: 'REJECTED',
+        reason: 'PROCESSING_FAILED',
+      });
       expect((await statuses(message.messageId)).map((s) => s.status)).toEqual(['RJCT']);
-      expect(publisher.sent.slice(before).map((m) => m.headers['dlq-reason'])).toEqual(['PROCESSING_FAILED']);
+
+      await processor.process({ ...message, offset: offset++ });
+      expect(publisher.sent.slice(before).map((m) => m.headers['dlq-reason'])).toEqual([
+        'PROCESSING_FAILED',
+        'PROCESSING_FAILED',
+      ]);
     });
   });
 });

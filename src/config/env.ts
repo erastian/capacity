@@ -145,6 +145,12 @@ export class Env {
   @Min(1000)
   PARKED_SWEEP_INTERVAL_MS = 60_000;
 
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  INBOUND_MAX_ATTEMPTS = 10;
+
   @BooleanFlag()
   PUBLISH_ACCEPTED_STATUS = false;
 

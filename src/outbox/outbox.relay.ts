@@ -7,12 +7,12 @@ import {
 import { ConfigService } from '@nestjs/config';
 import pg from 'pg';
 import type { Env } from '../config/env.js';
+import { boundedConnection } from '../shared/db/pg-options.js';
 import { Topic } from '../shared/kafka/kafka.options.js';
 import { EventPublisher } from './event-publisher.js';
 import type { OutboxRow, OutgoingMessage } from './outbox.types.js';
 
 const LEADER_LOCK = 'capacity:outbox-relay';
-const SERVER_KEEPALIVES = '-c tcp_keepalives_idle=30 -c tcp_keepalives_interval=10 -c tcp_keepalives_count=3';
 
 export function topicFor(type: string): string {
   return type === 'INBOUND_MESSAGE_STATUS' ? Topic.MessageStatus : Topic.ReservationEvents;
@@ -101,15 +101,7 @@ export class OutboxRelay implements OnApplicationBootstrap, BeforeApplicationShu
   }
 
   private async acquireLeadership(): Promise<boolean> {
-    const connection = new pg.Client({
-      connectionString: this.databaseUrl,
-      keepAlive: true,
-      keepAliveInitialDelayMillis: 10_000,
-      connectionTimeoutMillis: this.queryTimeout,
-      query_timeout: this.queryTimeout,
-      statement_timeout: this.queryTimeout,
-      options: SERVER_KEEPALIVES,
-    });
+    const connection = new pg.Client(boundedConnection(this.databaseUrl, this.queryTimeout));
     connection.on('error', (error) => {
       this.logger.warn(`Leader connection lost: ${error.message}`);
       if (this.connection === connection) void this.dropConnection();

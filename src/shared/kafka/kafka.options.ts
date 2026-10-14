@@ -1,5 +1,6 @@
 import type { ConfigService } from '@nestjs/config';
 import type { Env } from '../../config/env.js';
+import './connection-guard.js';
 import type { KafkaConnection } from './kafka.types.js';
 
 export const Topic = {

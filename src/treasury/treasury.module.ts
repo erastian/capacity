@@ -27,6 +27,6 @@ import { TreasuryConsumer } from './treasury.consumer.js';
     InboundProcessor,
     TreasuryConsumer,
   ],
-  exports: [InboundProcessor, TreasuryConsumer],
+  exports: [InboundProcessor],
 })
 export class TreasuryModule {}

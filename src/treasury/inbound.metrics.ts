@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Counter, Histogram } from 'prom-client';
+import { Counter, Gauge, Histogram } from 'prom-client';
 import type { Env } from '../config/env.js';
 import { MetricsServer } from '../metrics/metrics.server.js';
 import type { Envelope } from './adapter/envelope.types.js';
@@ -17,6 +17,8 @@ export class InboundMetrics {
   private readonly duplicates: Counter;
   private readonly alerts: Counter;
   private readonly snapshotBreaks: Counter;
+  private readonly consumerUp: Gauge;
+  private readonly failures: Counter;
 
   constructor(metrics: MetricsServer, config: ConfigService<Env, true>) {
     this.clockSkewToleranceMs = config.get('CLOCK_SKEW_TOLERANCE_SECONDS', { infer: true }) * 1000;
@@ -64,6 +66,25 @@ export class InboundMetrics {
       labelNames: ['result'],
       registers,
     });
+    this.consumerUp = new Gauge({
+      name: 'treasury_consumer_up',
+      help: '1 while the treasury consumer has an open stream',
+      registers,
+    });
+    this.failures = new Counter({
+      name: 'treasury_processing_failures_total',
+      help: 'Failed attempts to process a treasury message, live or parked',
+      labelNames: ['transient'],
+      registers,
+    });
+  }
+
+  consuming(up: boolean): void {
+    this.consumerUp.set(up ? 1 : 0);
+  }
+
+  failed(transient: boolean): void {
+    this.failures.inc({ transient: String(transient) });
   }
 
   alert(alert: string, message: string): void {

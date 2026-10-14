@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import type { Tx } from '../../shared/db/prisma.service.js';
+import { serializeEnvelope } from '../adapter/envelope.js';
 import type { Envelope } from '../adapter/envelope.types.js';
 import type { AwaitingKind, InboxRecord, KafkaCoordinates, Outcome, ParkedRecord, ParkedRow } from '../inbound.types.js';
 
@@ -22,14 +23,6 @@ export const KNOWN_TYPES = new Set([
 
 const PARKED_COLUMNS = `message_id, type::text AS type, awaiting_kind::text AS awaiting_kind, awaiting_ref,
   envelope, topic, partition, "offset", kafka_timestamp, resolved_at`;
-
-function serializeEnvelope(envelope: Envelope): string {
-  return JSON.stringify({
-    ...envelope,
-    version: envelope.version?.toString(),
-    asOf: envelope.asOf.toISOString(),
-  });
-}
 
 function deserializeEnvelope(raw: Record<string, unknown>): Envelope {
   return {
