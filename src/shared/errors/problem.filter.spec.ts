@@ -1,4 +1,5 @@
-import type { ArgumentsHost } from '@nestjs/common';
+import { type ArgumentsHost, Logger } from '@nestjs/common';
+import type { MockInstance } from 'vitest';
 import { Prisma } from '../../generated/prisma/client.js';
 import { ProblemFilter } from './problem.filter.js';
 
@@ -12,7 +13,7 @@ function respond(exception: unknown) {
     send: (body: { code: string }) => ((sent.body = body), reply),
   };
   const host = {
-    switchToHttp: () => ({ getRequest: () => ({ url: '/v1/x', id: 'cid' }), getResponse: () => reply }),
+    switchToHttp: () => ({ getRequest: () => ({ method: 'POST', url: '/v1/x', id: 'cid' }), getResponse: () => reply }),
   } as unknown as ArgumentsHost;
   new ProblemFilter().catch(exception, host);
   return sent;
@@ -26,6 +27,25 @@ const prismaError = (code: string, message = 'failed', originalCode?: string) =>
   });
 
 describe('problem filter', () => {
+  let warn: MockInstance;
+  let error: MockInstance;
+
+  beforeEach(() => {
+    warn = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    error = vi.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+  });
+
+  afterEach(() => vi.restoreAllMocks());
+
+  it('logs a transient failure as one warning and anything else as an error', () => {
+    respond(prismaError('P2010', 'deadlock detected', '40P01'));
+    expect(warn).toHaveBeenCalledWith('DATABASE_UNAVAILABLE on POST /v1/x: deadlock detected');
+    expect(error).not.toHaveBeenCalled();
+
+    respond(prismaError('P2010', 'failed', '23503'));
+    expect(error).toHaveBeenCalledTimes(1);
+  });
+
   it('answers an exhausted pool with 503 BUSY and Retry-After', () => {
     const sent = respond(prismaError('P2028', 'Transaction API error: Unable to start a transaction in the given time.'));
     expect(sent).toMatchObject({ status: 503, body: { code: 'BUSY' }, headers: { 'retry-after': '1' } });

@@ -45,9 +45,7 @@ export function isPoolExhausted(error: unknown): boolean {
 }
 
 export function isTransient(error: unknown): boolean {
-  if (error instanceof Prisma.PrismaClientInitializationError || error instanceof Prisma.PrismaClientUnknownRequestError) {
-    return true;
-  }
+  if (error instanceof Prisma.PrismaClientInitializationError) return true;
   if (!(error instanceof Prisma.PrismaClientKnownRequestError)) {
     return error instanceof Error && CONNECTION_MESSAGES.has(error.message);
   }

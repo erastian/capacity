@@ -1,3 +1,4 @@
+import { MultipleErrors, NetworkError, TimeoutError } from '@platformatic/kafka';
 import { Prisma } from '../generated/prisma/client.js';
 import { givesUp } from './retry-policy.js';
 
@@ -25,6 +26,7 @@ describe('retry policy', () => {
     expect(givesUp(new Error('[DecimalError] Invalid argument'), 9, 10)).toBe(false);
     expect(givesUp(new Error('[DecimalError] Invalid argument'), 10, 10)).toBe(true);
     expect(givesUp(postgres('23503'), 10, 10)).toBe(true);
+    expect(givesUp(new Prisma.PrismaClientUnknownRequestError('unexpected response', { clientVersion: 'test' }), 10, 10)).toBe(true);
   });
 
   it.each([
@@ -39,6 +41,9 @@ describe('retry policy', () => {
     ['a closed connection', adapter('ConnectionClosed')],
     ['a client query timeout', new Error('Query read timeout')],
     ['a terminated connection', new Error('Connection terminated unexpectedly')],
+    ['a broker connection error', new NetworkError('Connection error')],
+    ['a broker timeout', new TimeoutError('Request timed out')],
+    ['no reachable broker', new MultipleErrors('Cannot connect to any broker.', [new NetworkError('Connection error')])],
   ])('never gives up on %s', (_, error) => {
     expect(givesUp(error, 100, 10)).toBe(false);
   });

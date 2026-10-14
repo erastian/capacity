@@ -33,6 +33,7 @@ export class TokenVerifier implements OnApplicationBootstrap, BeforeApplicationS
   }
 
   onApplicationBootstrap(): void {
+    void this.keys.reload().catch((error: Error) => this.logger.warn(`Signing keys not loaded at start, retried on demand: ${error.message}`));
     this.refresh.start(KEYS_REFRESH_MS);
   }
 

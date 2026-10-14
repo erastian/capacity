@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import type { ConfigService } from '@nestjs/config';
 import { Prisma } from '../generated/prisma/client.js';
 import type { Env } from '../config/env.js';
@@ -36,6 +37,8 @@ function consumerWith(processor: Partial<Record<'process' | 'rejectPoison', Retu
 }
 
 describe('treasury consumer', () => {
+  beforeAll(() => Logger.overrideLogger(false));
+
   it('retries a transient failure until the message goes through', async () => {
     const { fake, handle } = consumerWith({
       process: vi.fn().mockRejectedValueOnce(lostConnection()).mockResolvedValueOnce(undefined),

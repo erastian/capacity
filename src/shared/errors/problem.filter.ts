@@ -27,14 +27,17 @@ export class ProblemFilter implements ExceptionFilter {
     const reply = http.getResponse<FastifyReply>();
     const body = this.toProblem(exception, request);
 
-    if (body.status >= 500) {
+    const transient = isTransient(exception);
+    if (transient) {
+      this.logger.warn(`${body.code} on ${request.method} ${request.url}: ${(exception as Error).message}`);
+    } else if (body.status >= 500) {
       this.logger.error(exception);
     }
 
     if (exception instanceof AppError) {
       void reply.headers(exception.headers);
     }
-    if (isTransient(exception)) {
+    if (transient) {
       void reply.header('retry-after', '1');
     }
 

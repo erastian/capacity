@@ -93,7 +93,13 @@ export class InboundMetrics {
   async afterCommit<T>(work: () => Promise<T>): Promise<T> {
     const buffer: (() => void)[] = [];
     const result = await this.pending.run(buffer, work);
-    buffer.forEach((record) => record());
+    for (const record of buffer) {
+      try {
+        record();
+      } catch (error) {
+        this.logger.error(`Metric not recorded after commit: ${(error as Error).message}`);
+      }
+    }
     return result;
   }
 

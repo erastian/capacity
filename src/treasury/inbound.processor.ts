@@ -4,7 +4,6 @@ import type { Env } from '../config/env.js';
 import type { OutboundEventType } from '../outbox/outbox.types.js';
 import { writeOutbox } from '../outbox/outbox.writer.js';
 import { type Tx, PrismaService } from '../shared/db/prisma.service.js';
-import { isTransient } from '../shared/db/sql-state.js';
 import { minorUnits } from '../shared/money/currency.js';
 import { capacityOf } from '../shared/money/capacity.js';
 import type { CapacityBalances } from '../shared/money/capacity.types.js';
@@ -38,7 +37,7 @@ import { QuoteRepository } from './persistence/quote.repository.js';
 import { SettlementRepository } from './persistence/settlement.repository.js';
 import type { AwaitingKind, Decision, ParkedRecord, ProcessingContext as Context } from './inbound.types.js';
 import { ReconciliationBatches } from './reconciliation-batches.js';
-import { givesUp } from './retry-policy.js';
+import { givesUp, isTransientFailure } from './retry-policy.js';
 import { writeStatus } from './status.writer.js';
 
 const ZERO_BALANCES = (program: ProgramView): CapacityBalances => ({
@@ -196,7 +195,7 @@ export class InboundProcessor {
 
   private replayGivesUp(messageId: string, error: unknown): boolean {
     const attempts = (this.replayFailures.get(messageId) ?? 0) + 1;
-    this.metrics.failed(isTransient(error));
+    this.metrics.failed(isTransientFailure(error));
     if (givesUp(error, attempts, this.maxAttempts)) {
       this.replayFailures.delete(messageId);
       return true;

@@ -3,14 +3,13 @@ import { ConfigService } from '@nestjs/config';
 import { Consumer, type Message, type MessagesStream, MessagesStreamFallbackModes, MessagesStreamModes, stringDeserializers } from '@platformatic/kafka';
 import { setTimeout } from 'node:timers/promises';
 import type { Env } from '../config/env.js';
-import { isTransient } from '../shared/db/sql-state.js';
 import { kafkaConnection, Topic } from '../shared/kafka/kafka.options.js';
 import { Clock } from '../shared/time/clock.js';
 import { Periodic } from '../shared/time/periodic.js';
 import type { RawMessage } from './adapter/envelope.types.js';
 import { InboundMetrics } from './inbound.metrics.js';
 import { InboundProcessor } from './inbound.processor.js';
-import { givesUp } from './retry-policy.js';
+import { givesUp, isTransientFailure } from './retry-policy.js';
 
 const MAX_BACKOFF_MS = 30_000;
 const TOPICS = [Topic.ProgramCapacity, Topic.FxRates];
@@ -125,7 +124,7 @@ export class TreasuryConsumer implements OnApplicationBootstrap, BeforeApplicati
         await this.processor.process(raw);
         return true;
       } catch (error) {
-        this.metrics.failed(isTransient(error));
+        this.metrics.failed(isTransientFailure(error));
         if (givesUp(error, attempt, this.maxAttempts)) {
           try {
             await this.processor.rejectPoison(raw, error as Error);
