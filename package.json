@@ -60,6 +60,10 @@
     "typescript": "^6.0.2",
     "vitest": "^4.1.2"
   },
+  "overrides": {
+    "mysql2": "^3.24.6",
+    "deepmerge-ts": "^8.0.2"
+  },
   "allowScripts": {
     "fsevents@2.3.3": true,
     "@prisma/engines@7.10.0": true,

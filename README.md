@@ -144,6 +144,7 @@ Envelope: `messageId`, `type`, `schemaVersion`, `programId`, `batchId`, `version
 - Records are never deleted by the module (except the outbox transport and expired idempotency keys). Retention follows the bank's policy (at least the regulatory minimum, e.g. FCA record keeping, but not forever under UK GDPR) and would use time partitions.
 - Scaling path for the relay: shard by `hash(program_id) % N`. An alternative to the relay is CDC (Debezium).
 - No generated OpenAPI/Swagger, a deliberate trade-off. The API is documented in the [API](#api) section above and as runnable requests in `http/*.http`.
+- `overrides` in `package.json` lift `mysql2` and `deepmerge-ts` inside the Prisma CLI (dev dependency, never in the runtime) past their advisories, since no patched Prisma 7.x exists. MySQL is not used and the config merge sees only the local `prisma.config.ts`. Remove them once a fixed Prisma release is out.
 
 ## Database roles
 
