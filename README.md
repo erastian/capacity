@@ -139,6 +139,7 @@ A new field is added within `schemaVersion` 1; renaming or removing one raises t
 - Programmes are payables finance with an irrevocable payment undertaking by the buyer: credit notes and disputes after approval do not reduce the debt to the bank and are not sent to the service. Programmes without IPU are a different product.
 - `externalUtilized` from treasury never includes invoices reserved here; exposure of an invoice lives only in its reservation here.
 - `invoiceId` is a unique id from origination and is never reused; one invoice, one reservation for life.
+- Tenor rules (maximum tenor, minimum days to maturity, grace before overdue) belong to credit and the programme agreements and are applied by origination before it reserves; the service only refuses a due date already in the past.
 - Origination is the only REST writer and chooses the programme; cancellations go to treasury, which reports the outcome.
 - The treasury message contract is designed here as an assumption, summarised in [Kafka contract](#kafka-contract).
 - Limits are not hierarchical (obligor, group) and there are no sub-limits per supplier or tenor; treasury sets programme limits consistently with them.

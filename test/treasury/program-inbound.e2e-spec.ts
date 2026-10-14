@@ -3,12 +3,14 @@ import { Prisma } from '../../src/generated/prisma/client.js';
 import { EventPublisher } from '../../src/outbox/event-publisher.js';
 import type { RawMessage } from '../../src/treasury/adapter/envelope.types.js';
 import { InboundProcessor } from '../../src/treasury/inbound.processor.js';
+import { type Tx, PrismaService } from '../../src/shared/db/prisma.service.js';
 import { BatchRepository } from '../../src/treasury/persistence/batch.repository.js';
+import { InboxRepository } from '../../src/treasury/persistence/inbox.repository.js';
 import { ProgramStateRepository } from '../../src/treasury/persistence/program.repository.js';
 import { givesUp } from '../../src/treasury/retry-policy.js';
 import { startApp } from '../support/app.js';
 import { CapturingPublisher } from '../support/capturing-publisher.js';
-import { closeDb, db, unique } from '../support/db.js';
+import { closeDb, db, seedProgram, seedRate, unique } from '../support/db.js';
 import { token } from '../support/issuer.js';
 import type { ProgramMessageInput as MessageInput } from '../support/support.types.js';
 
@@ -350,6 +352,33 @@ describe('treasury program messages', () => {
         [programId],
       );
       expect(rows[0].n).toBe(0);
+    });
+
+    it('replay a row whose data arrived only after the earlier rows of its queue', async () => {
+      const programId = await seedProgram();
+      const arrived = await seedRate({ from: 'NOK', to: 'EUR' });
+      const queue = app.get(InboxRepository);
+      const park = (tx: Tx, offsetInQueue: bigint, awaitingRef: string) => {
+        const messageId = unique('m');
+        return queue.insertParked(tx, {
+          messageId,
+          type: 'INVOICE_PAYMENT_ALLOCATED',
+          programId: null,
+          programExternalId: programId,
+          reservationId: null,
+          awaitingKind: 'FX_RATE',
+          awaitingRef,
+          envelope: { messageId, type: 'INVOICE_PAYMENT_ALLOCATED', schemaVersion: 1, programId, asOf: new Date(), payload: {} },
+          coordinates: { topic: 'treasury.program-capacity', partition: 0, offset: offsetInQueue, timestamp: new Date() },
+        });
+      };
+      const prisma = app.get(PrismaService);
+      await prisma.inTransaction(async (tx) => {
+        await park(tx, offset++, unique('R'));
+        await park(tx, offset++, arrived);
+      });
+
+      expect(await prisma.inTransaction((tx) => queue.nextResolvableParked(tx, programId))).toBeUndefined();
     });
 
     it('reject a replay that fails on its data and let the next message through', async () => {

@@ -104,13 +104,14 @@ export class InboxRepository {
          AND CASE pm.awaiting_kind
            WHEN 'PROGRAM' THEN EXISTS (SELECT 1 FROM program p WHERE p.external_id = pm.program_external_id)
            WHEN 'FX_RATE' THEN EXISTS (SELECT 1 FROM fx_rate f WHERE f.external_id = pm.awaiting_ref)
-           ELSE NOT EXISTS (
-             SELECT 1 FROM parked_message prev
-             WHERE prev.program_external_id = pm.program_external_id AND prev.resolved_at IS NULL
-               AND (prev.reservation_id IS NULL OR prev.reservation_id = pm.reservation_id)
-               AND (prev.partition, prev."offset") < (pm.partition, pm."offset")
-           )
+           ELSE true
          END
+         AND NOT EXISTS (
+           SELECT 1 FROM parked_message prev
+           WHERE prev.program_external_id = pm.program_external_id AND prev.resolved_at IS NULL
+             AND (prev.reservation_id IS NULL OR prev.reservation_id = pm.reservation_id)
+             AND (prev.partition, prev."offset") < (pm.partition, pm."offset")
+         )
        ORDER BY pm.partition, pm."offset"
        LIMIT 1`,
       programExternalId,
