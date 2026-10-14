@@ -15,7 +15,7 @@ const AVAILABILITY = `
   FROM program p
   LEFT JOIN LATERAL (
     SELECT sum(x.amount - x.released_amount) FILTER (WHERE x.funded_at IS NOT NULL) AS funded
-    FROM reservation x WHERE x.program_id = p.id
+    FROM reservation x WHERE x.program_id = p.id AND x.status IN ('ACTIVE', 'PARTIALLY_RELEASED')
   ) r ON true`;
 
 function toView(row: AvailabilityRow): AvailabilityView {

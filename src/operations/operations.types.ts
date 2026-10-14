@@ -19,10 +19,17 @@ export interface StaleProgram {
   syncedAt: Date | null;
 }
 
+export interface StalledOutbox {
+  eventId: string;
+  type: string;
+  createdAt: Date;
+}
+
 export interface MonitorSnapshot {
   overdue: OverdueReservation[];
   agedParked: AgedParkedMessage[];
   staleTreasury: StaleProgram[];
+  outboxLagSeconds: number;
 }
 
 export interface Mismatch {

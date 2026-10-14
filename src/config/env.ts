@@ -127,6 +127,11 @@ export class Env {
 
   @Type(() => Number)
   @IsInt()
+  @Min(1)
+  OUTBOX_MAX_LAG_SECONDS = 5 * 60;
+
+  @Type(() => Number)
+  @IsInt()
   @Min(1000)
   CLEANUP_INTERVAL_MS = 60 * 60 * 1000;
 

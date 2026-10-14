@@ -4,6 +4,7 @@ import { Counter, Gauge, Histogram } from 'prom-client';
 import type { Env } from '../config/env.js';
 import { MetricsServer } from '../metrics/metrics.server.js';
 import type { Envelope } from './adapter/envelope.types.js';
+import { KNOWN_TYPES } from './persistence/inbox.repository.js';
 
 @Injectable()
 export class InboundMetrics {
@@ -120,7 +121,7 @@ export class InboundMetrics {
   }
 
   decided(type: string, outcome: string): void {
-    this.outcomes.inc({ type, outcome });
+    this.outcomes.inc({ type: KNOWN_TYPES.has(type) ? type : 'UNKNOWN', outcome });
   }
 
   deadLettered(reason: string): void {

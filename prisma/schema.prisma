@@ -256,6 +256,7 @@ model CapacityLedger {
 
   @@index([programId, id])
   @@index([reservationId])
+  @@index([releaseId])
   @@map("capacity_ledger")
 }
 

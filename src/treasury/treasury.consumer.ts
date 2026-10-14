@@ -13,6 +13,7 @@ import {
   MessagesStreamModes,
   stringDeserializers,
 } from '@platformatic/kafka';
+import { setTimeout } from 'node:timers/promises';
 import type { Env } from '../config/env.js';
 import { isTransient } from '../shared/db/sql-state.js';
 import { kafkaConnection, Topic } from '../shared/kafka/kafka.options.js';
@@ -49,8 +50,8 @@ export class TreasuryConsumer implements OnApplicationBootstrap, BeforeApplicati
   );
   private readonly maxAttempts: number;
   private stream?: MessagesStream<string, string, string, string>;
+  private readonly stopping = new AbortController();
   private loop?: Promise<void>;
-  private stopped = false;
 
   constructor(
     private readonly processor: InboundProcessor,
@@ -82,11 +83,19 @@ export class TreasuryConsumer implements OnApplicationBootstrap, BeforeApplicati
   }
 
   async beforeApplicationShutdown(): Promise<void> {
-    this.stopped = true;
+    this.stopping.abort();
     await this.sweep.stop();
     await this.stream?.close();
     await this.loop;
     await this.consumer?.close();
+  }
+
+  private get stopped(): boolean {
+    return this.stopping.signal.aborted;
+  }
+
+  private async pause(ms: number): Promise<void> {
+    await setTimeout(ms, undefined, { signal: this.stopping.signal }).catch(() => undefined);
   }
 
   private async run(consumer: Consumer<string, string, string, string>): Promise<void> {
@@ -98,23 +107,23 @@ export class TreasuryConsumer implements OnApplicationBootstrap, BeforeApplicati
           mode: MessagesStreamModes.COMMITTED,
           fallbackMode: MessagesStreamFallbackModes.EARLIEST,
         });
+        if (this.stopped) break;
         this.metrics.consuming(true);
-        failures = 0;
         this.logger.log(`Consuming ${TOPICS.join(', ')}`);
         for await (const message of this.stream) {
-          if (!(await this.handle(toRaw(message)))) return;
+          failures = 0;
+          if (!(await this.handle(toRaw(message)))) break;
           await message.commit();
         }
       } catch (error) {
-        if (this.stopped) return;
-        this.logger.error(`Consumer stopped: ${(error as Error).message}`);
+        if (!this.stopped) this.logger.error(`Consumer stopped: ${(error as Error).message}`);
       }
       this.metrics.consuming(false);
       await this.stream?.close().catch(() => undefined);
       if (this.stopped) return;
       const delay = backoff(failures++);
       this.logger.warn(`Restarting the consumer in ${delay}ms`);
-      await new Promise((resolve) => setTimeout(resolve, delay));
+      await this.pause(delay);
     }
   }
 
@@ -135,7 +144,7 @@ export class TreasuryConsumer implements OnApplicationBootstrap, BeforeApplicati
         }
         const delay = backoff(attempt - 1);
         this.logger.error(`Processing failed, retrying in ${delay}ms: ${(error as Error).message}`);
-        await new Promise((resolve) => setTimeout(resolve, delay));
+        await this.pause(delay);
       }
     }
     return false;

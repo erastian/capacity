@@ -275,6 +275,12 @@ describe('POST /v1/reservations', () => {
     expect(res.statusCode).toBe(403);
   });
 
+  it('needs no read scope besides reservations:write', async () => {
+    const writer = await token({ claims: { sub: 'svc-origination', scope: 'reservations:write' } });
+    const res = await reserve(request(await seedProgram()), unique('key'), writer);
+    expect(res.statusCode).toBe(201);
+  });
+
   describe('under concurrency', () => {
     it('never exceeds the limit', async () => {
       const programId = await seedProgram({ creditLimit: '60' });

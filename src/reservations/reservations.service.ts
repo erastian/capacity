@@ -3,7 +3,6 @@ import { ConfigService } from '@nestjs/config';
 import { createHash } from 'node:crypto';
 import type { Env } from '../config/env.js';
 import { writeOutbox } from '../outbox/outbox.writer.js';
-import { canSeeProgram } from '../shared/auth/visibility.js';
 import { type Tx, PrismaService } from '../shared/db/prisma.service.js';
 import { AppError } from '../shared/errors/app-error.js';
 import { problem } from '../shared/errors/problem.js';
@@ -112,7 +111,7 @@ export class ReservationsService {
     const { request, principal } = command;
 
     const program = await this.repository.lockProgram(tx, request.programId);
-    if (!program || !canSeeProgram(principal, program.clientRef)) {
+    if (!program) {
       return this.problem(command, HttpStatus.NOT_FOUND, 'PROGRAM_NOT_FOUND', {
         detail: `Program ${request.programId} not found`,
       });

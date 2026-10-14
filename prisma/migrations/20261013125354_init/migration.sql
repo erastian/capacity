@@ -326,6 +326,9 @@ CREATE INDEX "capacity_ledger_program_id_id_idx" ON "capacity_ledger"("program_i
 CREATE INDEX "capacity_ledger_reservation_id_idx" ON "capacity_ledger"("reservation_id");
 
 -- CreateIndex
+CREATE INDEX "capacity_ledger_release_id_idx" ON "capacity_ledger"("release_id");
+
+-- CreateIndex
 CREATE UNIQUE INDEX "fx_rate_external_id_key" ON "fx_rate"("external_id");
 
 -- CreateIndex
@@ -451,11 +454,13 @@ ALTER TABLE "program"
     ADD CONSTRAINT "program_amounts_check" CHECK ("credit_limit" >= 0 AND "external_utilized" >= 0 AND "reserved" >= 0),
     ADD CONSTRAINT "program_open_blocking_breaks_check" CHECK ("open_blocking_breaks" >= 0);
 
--- Checks: program_break
+-- Checks and indexes: program_break
 ALTER TABLE "program_break"
     ADD CONSTRAINT "program_break_program_ref_check" CHECK ("program_id" IS NOT NULL OR "program_external_id" IS NOT NULL),
     ADD CONSTRAINT "program_break_blocking_check" CHECK ("program_id" IS NOT NULL OR NOT "blocking"),
     ADD CONSTRAINT "program_break_resolution_check" CHECK (("resolved_at" IS NULL) = ("resolution_message_id" IS NULL));
+
+CREATE INDEX "program_break_open_idx" ON "program_break"("program_id", "reason") WHERE "resolved_at" IS NULL;
 
 -- Checks: reservation
 ALTER TABLE "reservation"
@@ -546,12 +551,16 @@ ALTER TABLE "parked_message"
     ADD CONSTRAINT "parked_message_coordinates_check" CHECK ("partition" >= 0 AND "offset" >= 0);
 
 CREATE INDEX "parked_message_unresolved_idx" ON "parked_message"("awaiting_kind", "awaiting_ref") WHERE "resolved_at" IS NULL;
+CREATE INDEX "parked_message_program_queue_idx" ON "parked_message"("program_external_id", "partition", "offset")
+    WHERE "resolved_at" IS NULL;
 
 -- Indexes: outbox_event
 CREATE INDEX "outbox_event_unpublished_idx" ON "outbox_event"("id") WHERE "published_at" IS NULL;
 
 -- Indexes: reservation
 CREATE INDEX "reservation_live_program_id_idx" ON "reservation"("program_id")
+    WHERE "status" IN ('ACTIVE', 'PARTIALLY_RELEASED');
+CREATE INDEX "reservation_live_due_date_idx" ON "reservation"("due_date")
     WHERE "status" IN ('ACTIVE', 'PARTIALLY_RELEASED');
 
 -- Checks: reservation_decline

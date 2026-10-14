@@ -6,7 +6,13 @@ import { MetricsServer } from '../metrics/metrics.server.js';
 import { PrismaService } from '../shared/db/prisma.service.js';
 import { businessDate, Clock } from '../shared/time/clock.js';
 import { Periodic } from '../shared/time/periodic.js';
-import type { AgedParkedMessage, MonitorSnapshot, OverdueReservation, StaleProgram } from './operations.types.js';
+import type {
+  AgedParkedMessage,
+  MonitorSnapshot,
+  OverdueReservation,
+  StalledOutbox,
+  StaleProgram,
+} from './operations.types.js';
 
 @Injectable()
 export class OperationalMonitors implements OnApplicationBootstrap, BeforeApplicationShutdown {
@@ -18,6 +24,8 @@ export class OperationalMonitors implements OnApplicationBootstrap, BeforeApplic
   private readonly overdueGauge: Gauge;
   private readonly agedParkedGauge: Gauge;
   private readonly staleGauge: Gauge;
+  private readonly outboxLagGauge: Gauge;
+  private readonly outboxMaxLagSeconds: number;
   private readonly known = new Map<string, Set<string>>();
   private readonly periodic = new Periodic(
     () => this.check(),
@@ -34,6 +42,7 @@ export class OperationalMonitors implements OnApplicationBootstrap, BeforeApplic
     this.parkedMaxAgeSeconds = config.get('PARKED_MAX_AGE_SECONDS', { infer: true });
     this.treasuryMaxAgeSeconds = config.get('TREASURY_DATA_MAX_AGE_SECONDS', { infer: true });
     this.interval = config.get('MONITOR_INTERVAL_MS', { infer: true });
+    this.outboxMaxLagSeconds = config.get('OUTBOX_MAX_LAG_SECONDS', { infer: true });
     const registers = [metrics.registry];
     this.overdueGauge = new Gauge({
       name: 'capacity_reservations_overdue',
@@ -51,6 +60,11 @@ export class OperationalMonitors implements OnApplicationBootstrap, BeforeApplic
       help: 'Programmes whose treasury data is older than TREASURY_DATA_MAX_AGE',
       registers,
     });
+    this.outboxLagGauge = new Gauge({
+      name: 'capacity_outbox_oldest_unpublished_seconds',
+      help: 'Age of the oldest outbox event not yet published to Kafka',
+      registers,
+    });
   }
 
   onApplicationBootstrap(): void {
@@ -63,16 +77,22 @@ export class OperationalMonitors implements OnApplicationBootstrap, BeforeApplic
 
   async check(): Promise<MonitorSnapshot> {
     const now = this.clock.now();
-    const [overdue, agedParked, staleTreasury] = await Promise.all([
+    const [overdue, agedParked, staleTreasury, oldestUnpublished] = await Promise.all([
       this.overdue(businessDate(now, this.timeZone)),
       this.agedParked(now),
       this.staleTreasury(now),
+      this.oldestUnpublished(),
     ]);
+    const outboxLagSeconds = oldestUnpublished
+      ? Math.max(0, (now.getTime() - oldestUnpublished.createdAt.getTime()) / 1000)
+      : 0;
+    const stalled = oldestUnpublished && outboxLagSeconds > this.outboxMaxLagSeconds ? [oldestUnpublished] : [];
 
     this.overdueGauge.set({ funded: 'true' }, overdue.filter((item) => item.funded).length);
     this.overdueGauge.set({ funded: 'false' }, overdue.filter((item) => !item.funded).length);
     this.agedParkedGauge.set(agedParked.length);
     this.staleGauge.set(staleTreasury.length);
+    this.outboxLagGauge.set(outboxLagSeconds);
 
     this.track('RESERVATION_OVERDUE', overdue, (item) => item.reservationId, (item) =>
       `reservation ${item.reservationId} (invoice ${item.invoiceId}, program ${item.programId}) is past due ${item.dueDate}, ${
@@ -85,8 +105,11 @@ export class OperationalMonitors implements OnApplicationBootstrap, BeforeApplic
     this.track('TREASURY_DATA_STALE', staleTreasury, (item) => item.programId, (item) =>
       `program ${item.programId} last confirmed by treasury at ${item.syncedAt?.toISOString() ?? 'never'}`,
     );
+    this.track('OUTBOX_STALLED', stalled, () => 'outbox', (item) =>
+      `event ${item.eventId} (${item.type}) is unpublished since ${item.createdAt.toISOString()}`,
+    );
 
-    return { overdue, agedParked, staleTreasury };
+    return { overdue, agedParked, staleTreasury, outboxLagSeconds };
   }
 
   private track<T>(alert: string, items: T[], keyOf: (item: T) => string, describe: (item: T) => string): void {
@@ -146,5 +169,15 @@ export class OperationalMonitors implements OnApplicationBootstrap, BeforeApplic
              OR treasury_synced_at < ${now}::timestamptz - make_interval(secs => ${this.treasuryMaxAgeSeconds}::double precision))
     `;
     return rows.map((row) => ({ programId: row.external_id, syncedAt: row.treasury_synced_at }));
+  }
+
+  private async oldestUnpublished(): Promise<StalledOutbox | undefined> {
+    const rows = await this.prisma.$queryRaw<{ event_id: string; type: string; created_at: Date }[]>`
+      SELECT event_id::text, type::text, created_at FROM outbox_event
+      WHERE published_at IS NULL
+      ORDER BY id
+      LIMIT 1
+    `;
+    return rows[0] && { eventId: rows[0].event_id, type: rows[0].type, createdAt: rows[0].created_at };
   }
 }
