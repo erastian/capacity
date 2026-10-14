@@ -130,6 +130,13 @@ export interface BatchProgress {
   alertedAt: Date | null;
 }
 
+export interface BatchProgressRow {
+  batch_id: string;
+  program_count: number;
+  received: number;
+  alerted_at: Date | null;
+}
+
 export interface ProcessingContext {
   envelope: Envelope;
   coordinates: KafkaCoordinates;

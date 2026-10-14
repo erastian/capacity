@@ -4,7 +4,7 @@ import type { Env } from '../config/env.js';
 import { PrismaService } from '../shared/db/prisma.service.js';
 import { Periodic } from '../shared/time/periodic.js';
 import { InboundMetrics } from './inbound.metrics.js';
-import { InboundRepository } from './inbound.repository.js';
+import { BatchRepository } from './persistence/batch.repository.js';
 import type { BatchProgress } from './inbound.types.js';
 
 @Injectable()
@@ -18,7 +18,7 @@ export class ReconciliationBatches implements OnApplicationBootstrap, BeforeAppl
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly repository: InboundRepository,
+    private readonly repository: BatchRepository,
     private readonly metrics: InboundMetrics,
     config: ConfigService<Env, true>,
   ) {

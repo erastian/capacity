@@ -61,6 +61,8 @@ buyers, ops, audit ──► read API       │                               �
 
 Modules by subject: `reservations` (reserve + reads), `treasury` (inbound adapter, decisions, processor, consumer), `programs`, `rates`, `audit`, `operations` (monitors, internal reconciliation, cleanup), `outbox`, `shared` (auth, db, errors, http, kafka, money, time). Domain decisions are pure functions with unit tests (`*/domain/*`); persistence is raw SQL through Prisma where the SQL matters (locks, conditional updates, keyset pages).
 
+The treasury inbound side is deliberately split this way: every decision is a pure function in `treasury/domain/` with its own tests, SQL lives in per-aggregate repositories under `treasury/persistence/` (inbox and parked queue, programme state, settlements, breaks, quotes, batches), and `inbound.processor.ts` is a transaction script that only applies decided effects. It stays one file on purpose: one treasury message is one transaction, and its whole path (lock, duplicate check, park, decide, apply, status) reads top to bottom in one place.
+
 **Reserve** (`POST /v1/reservations`, `Idempotency-Key` required), one transaction:
 1. advisory lock on `(client, key)`; a stored outcome is replayed as is;
 2. `SELECT … FOR UPDATE` on the programme, then checks in a fixed order: visible programme → invoice not reserved yet → due date → status → no blocking break → FX quote (valuation, active, fresh) → capacity;
