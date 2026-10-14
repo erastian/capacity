@@ -38,6 +38,7 @@ npm run simulate -- all              # every treasury scenario, printed step by 
 
 - `http/*.http` — ready requests for the WebStorm HTTP client (environment `local`): run `auth.http` first, it stores tokens for origination, operator, auditor and a buyer.
 - Kafka UI: <http://localhost:8081>. Keycloak admin: <http://localhost:8080> (`admin` / `admin`).
+- `.env.example` holds only what has no default (connections and credentials). Every setting, with its default and validation, is in `src/config/env.ts` (intervals, thresholds, TTLs, feature flags).
 - Local users (password = username): `operator`, `auditor`, `buyer-acme` (client `C-ACME`), `buyer-globex` (client `C-GLOBEX`); service client `origination` / `origination-local-secret`.
 - Simulator scenarios: `demo`, `rates`, `onboarding`, `reserve-fund-repay`, `fx-payment` (a payment waits for its FX quote, then applies), `limit-cut` (limit excess), `currency-mismatch` (programme on hold until treasury fixes it), `bulk-batch`. FX quotes older than 6 h are stale for reservations: `npm run simulate -- rates` refreshes them.
 

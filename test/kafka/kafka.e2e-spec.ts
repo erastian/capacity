@@ -85,6 +85,14 @@ describe('with Kafka', () => {
     }
   };
 
+  const holdsFor = async (check: () => boolean, windowMs: number) => {
+    const started = Date.now();
+    while (Date.now() - started < windowMs) {
+      if (!check()) throw new Error('invariant broken within the window');
+      await new Promise((r) => setTimeout(r, 50));
+    }
+  };
+
   const reserve = (app: NestFastifyApplication, programId: string) =>
     app.inject({
       method: 'POST',
@@ -127,9 +135,10 @@ describe('with Kafka', () => {
       apps.push(await startApp());
       const relays = () => apps.map((app) => app.get(OutboxRelay));
 
-      await waitFor(() => relays().some((relay) => relay.isLeader));
-      await new Promise((r) => setTimeout(r, 600));
-      expect(relays().filter((relay) => relay.isLeader)).toHaveLength(1);
+      const leaders = () => relays().filter((relay) => relay.isLeader).length;
+      await waitFor(() => leaders() === 1);
+      await holdsFor(() => leaders() <= 1, 1000);
+      expect(leaders()).toBe(1);
 
       const [leader] = apps.splice(relays().findIndex((relay) => relay.isLeader), 1);
       await leader.close();
