@@ -7,7 +7,9 @@ import { CapturingPublisher } from '../support/capturing-publisher.js';
 import { closeDb, db, seedProgram, seedRate, unique } from '../support/db.js';
 import { token } from '../support/issuer.js';
 
-const ORIGINATION = { sub: 'svc-origination', azp: 'origination', scope: 'reservations:write programs:read:all' };
+const INVOICE_CURRENCY = 'THB';
+
+const ORIGINATION ={ sub: 'svc-origination', azp: 'origination', scope: 'reservations:write programs:read:all' };
 
 let offset = 0n;
 let quoteVersion = BigInt(Date.now()) * 1000n;
@@ -37,20 +39,20 @@ function conversionQuote(rateId: string, rate = '4.6512'): RawMessage {
     topic: 'treasury.fx-rates',
     partition: 0,
     offset: offset++,
-    key: 'RON:CZK:CONVERSION',
+    key: `RON:${INVOICE_CURRENCY}:CONVERSION`,
     value: JSON.stringify({
       messageId,
       type: 'FX_RATE_PUBLISHED',
       schemaVersion: 1,
       version: (++quoteVersion).toString(),
       asOf: new Date(Date.now() - 1000).toISOString(),
-      payload: { rateId, from: 'RON', to: 'CZK', rateType: 'CONVERSION', status: 'ACTIVE', rate },
+      payload: { rateId, from: 'RON', to: INVOICE_CURRENCY, rateType: 'CONVERSION', status: 'ACTIVE', rate },
     }),
     timestamp: new Date(),
   };
 }
 
-const czk = (amount: string) => ({ amount, currency: 'CZK' });
+const owed = (amount: string) => ({ amount, currency: INVOICE_CURRENCY });
 
 describe('treasury invoice messages', () => {
   let app: NestFastifyApplication;
@@ -63,7 +65,7 @@ describe('treasury invoice messages', () => {
     );
     processor = app.get(InboundProcessor);
     bearer = await token({ claims: ORIGINATION });
-    await seedRate({ from: 'CZK', to: 'EUR', rate: '0.0397' });
+    await seedRate({ from: INVOICE_CURRENCY, to: 'EUR', rate: '0.0397' });
   });
 
   afterAll(async () => {
@@ -76,7 +78,7 @@ describe('treasury invoice messages', () => {
       method: 'POST',
       url: '/v1/reservations',
       headers: { authorization: `Bearer ${bearer}`, 'idempotency-key': unique('key') },
-      payload: { programId, invoiceId: unique('INV'), amount, currency: 'CZK', dueDate: '2099-12-31' },
+      payload: { programId, invoiceId: unique('INV'), amount, currency: INVOICE_CURRENCY, dueDate: '2099-12-31' },
     });
 
   const reserve = async (programId: string, amount?: string) => {
@@ -105,8 +107,8 @@ describe('treasury invoice messages', () => {
         invoiceId: invoice.invoiceId,
         allocationId,
         paymentId: `PAY-${allocationId}`,
-        payment: czk(amount),
-        settledAmount: czk(amount),
+        payment: owed(amount),
+        settledAmount: owed(amount),
       }),
     );
 
@@ -117,7 +119,7 @@ describe('treasury invoice messages', () => {
         allocationId: unique('A'),
         paymentId: unique('PAY'),
         payment: { amount: payment, currency: 'RON' },
-        settledAmount: czk(settled),
+        settledAmount: owed(settled),
         fxRateId,
       }),
     );
@@ -127,7 +129,7 @@ describe('treasury invoice messages', () => {
       message('INVOICE_BALANCE_WRITTEN_OFF', invoice.programId, {
         invoiceId: invoice.invoiceId,
         writeOffId: unique('W'),
-        amount: czk(amount),
+        amount: owed(amount),
         writeOffReason: 'ROUNDING_TOLERANCE',
       }),
     );
@@ -232,7 +234,7 @@ describe('treasury invoice messages', () => {
       reservationId: invoice.id,
       reason: 'REPAYMENT',
       originalAmount: '2500.00',
-      originalCurrency: 'CZK',
+      originalCurrency: INVOICE_CURRENCY,
       amount: '99.2500',
       currency: 'EUR',
       status: 'PARTIALLY_RELEASED',
