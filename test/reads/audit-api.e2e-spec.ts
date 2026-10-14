@@ -196,6 +196,15 @@ describe('audit and break journals', () => {
       expect((await get('auditor', `/v1/audit/declines?programId=${programId}&from=${tomorrow}`)).json().items).toEqual([]);
     });
 
+    it.each(['2026-W01', '2026-001', '2026-01-01T00:00:00', '2026-02-30T00:00:00Z'])(
+      'rejects %s as a decline journal bound',
+      async (from) => {
+        const res = await get('auditor', `/v1/audit/declines?from=${from}`);
+        expect(res.statusCode).toBe(422);
+        expect(res.json()).toMatchObject({ code: 'VALIDATION_FAILED' });
+      },
+    );
+
     it('is closed to everyone without audit:read', async () => {
       for (const path of ['ledger?programId=P', 'inbox', 'parked', `fundings?reservationId=${reservationId}`, 'outbox', 'declines']) {
         expect((await get('operator', `/v1/audit/${path}`)).statusCode).toBe(403);

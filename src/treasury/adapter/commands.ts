@@ -21,6 +21,7 @@ export const SUPPORTED_SCHEMA_VERSION = 1;
 const STATUSES: readonly ProgramStatus[] = ['ACTIVE', 'SUSPENDED', 'CLOSED'];
 const RATE_TYPES: readonly FxRateType[] = ['VALUATION', 'CONVERSION'];
 const RATE_STATUSES: readonly FxRateStatus[] = ['ACTIVE', 'SUSPENDED'];
+const MAX_PROGRAM_COUNT = 2 ** 31 - 1;
 
 class Invalid extends Error {}
 
@@ -204,7 +205,9 @@ function build(envelope: Envelope): Command | undefined {
       };
     case 'RECONCILIATION_BATCH_COMPLETED': {
       const count = payload.programCount;
-      if (!Number.isSafeInteger(count) || (count as number) < 1) fail('programCount must be a positive integer');
+      if (!Number.isSafeInteger(count) || (count as number) < 1 || (count as number) > MAX_PROGRAM_COUNT) {
+        fail(`programCount must be an integer from 1 to ${MAX_PROGRAM_COUNT}`);
+      }
       return {
         type: 'RECONCILIATION_BATCH_COMPLETED',
         batchId: envelope.batchId ?? fail('batchId is missing or invalid'),

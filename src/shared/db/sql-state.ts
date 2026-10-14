@@ -2,6 +2,8 @@ import { Prisma } from '../../generated/prisma/client.js';
 import type { DriverAdapterMeta } from './db.types.js';
 
 const CHECK_VIOLATION = '23514';
+const TRANSACTION_UNAVAILABLE = 'P2028';
+const START_TIMED_OUT = 'Unable to start a transaction in the given time';
 const LOCK_NOT_AVAILABLE = '55P03';
 const TRANSIENT_CLASSES = ['08', '40', '53', '57', '58'];
 const TRANSIENT_CODES = new Set(['P1001', 'P1002', 'P1008', 'P1017', 'P2024', 'P2028', 'P2034']);
@@ -36,6 +38,14 @@ export function sqlState(error: unknown): string | undefined {
 export function isDataError(error: unknown): boolean {
   const code = sqlState(error);
   return code !== undefined && (code.startsWith('22') || code === CHECK_VIOLATION);
+}
+
+export function isPoolExhausted(error: unknown): boolean {
+  return (
+    error instanceof Prisma.PrismaClientKnownRequestError &&
+    error.code === TRANSACTION_UNAVAILABLE &&
+    error.message.includes(START_TIMED_OUT)
+  );
 }
 
 export function isTransient(error: unknown): boolean {

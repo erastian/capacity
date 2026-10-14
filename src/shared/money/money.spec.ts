@@ -72,6 +72,11 @@ describe('exposure', () => {
     ).toBe('1000000000000000.0012');
   });
 
+  it('never writes a decimal in exponent notation', () => {
+    expect(new Decimal('0.000000000000000001').toString()).toBe('0.000000000000000001');
+    expect(new Decimal('10000000000000000000000').toString()).toBe('10000000000000000000000');
+  });
+
   it('formats with the requested places', () => {
     expect(formatAmount(new Decimal('100'), 2)).toBe('100.00');
   });

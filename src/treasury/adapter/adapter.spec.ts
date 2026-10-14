@@ -149,6 +149,7 @@ describe('toCommand', () => {
       ['a break id that is not ours', { type: 'BREAK_RESOLVED', payload: { breakId: 'BRK-1' } }],
       ['a batch without batchId', { type: 'RECONCILIATION_BATCH_COMPLETED', payload: { programCount: 3 } }],
       ['a zero programCount', { type: 'RECONCILIATION_BATCH_COMPLETED', batchId: 'B-1', payload: { programCount: 0 } }],
+      ['a programCount beyond int4', { type: 'RECONCILIATION_BATCH_COMPLETED', batchId: 'B-1', payload: { programCount: 2 ** 31 } }],
       ['a fractional programCount', { type: 'RECONCILIATION_BATCH_COMPLETED', batchId: 'B-1', payload: { programCount: 1.5 } }],
       ['a programCount as text', { type: 'RECONCILIATION_BATCH_COMPLETED', batchId: 'B-1', payload: { programCount: '3' } }],
     ])('rejects %s', (_, patch) => {

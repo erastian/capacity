@@ -107,8 +107,6 @@ export class InboundProcessor {
   }
 
   async process(raw: RawMessage): Promise<void> {
-    this.metrics.received(raw.topic, raw.timestamp, this.clock.now());
-
     const parsed = parseEnvelope(raw);
     if (parsed.kind === 'unreadable') {
       await this.deadLetters.send(raw, `UNREADABLE_ENVELOPE: ${parsed.reason}`);
@@ -119,7 +117,7 @@ export class InboundProcessor {
     const envelope = parsed.envelope;
     this.metrics.checkClock(envelope, raw.timestamp);
 
-    const decision = await this.prisma.inTransaction((tx) =>
+    const decision = await this.transaction((tx) =>
       this.decide(tx, {
         envelope,
         coordinates: { topic: raw.topic, partition: raw.partition, offset: raw.offset, timestamp: raw.timestamp },
@@ -151,7 +149,7 @@ export class InboundProcessor {
         partitionKey: raw.key ?? envelope.programId ?? envelope.messageId,
         fromParked: false,
       };
-      await this.prisma.inTransaction(async (tx) => {
+      await this.transaction(async (tx) => {
         if (await this.inbox.findInbox(tx, envelope.messageId)) return;
         await this.recordPoison(tx, context);
       });
@@ -169,7 +167,7 @@ export class InboundProcessor {
       const replay: { parked?: ParkedRecord } = {};
       let decision: Decision | undefined;
       try {
-        decision = await this.prisma.inTransaction(async (tx) => {
+        decision = await this.transaction(async (tx) => {
           replay.parked = undefined;
           const program = await this.programs.lockProgram(tx, programExternalId);
           if (!program) return undefined;
@@ -219,8 +217,12 @@ export class InboundProcessor {
     return false;
   }
 
+  private transaction<T>(work: (tx: Tx) => Promise<T>): Promise<T> {
+    return this.metrics.afterCommit(() => this.prisma.inTransaction(work));
+  }
+
   private async rejectParked(programExternalId: string, parked: ParkedRecord, error: Error): Promise<void> {
-    await this.prisma.inTransaction(async (tx) => {
+    await this.transaction(async (tx) => {
       await this.recordPoison(tx, {
         envelope: parked.envelope,
         coordinates: parked.coordinates,

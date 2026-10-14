@@ -3,6 +3,7 @@ import { Prisma } from '../../src/generated/prisma/client.js';
 import { EventPublisher } from '../../src/outbox/event-publisher.js';
 import type { RawMessage } from '../../src/treasury/adapter/envelope.types.js';
 import { InboundProcessor } from '../../src/treasury/inbound.processor.js';
+import { BatchRepository } from '../../src/treasury/persistence/batch.repository.js';
 import { ProgramStateRepository } from '../../src/treasury/persistence/program.repository.js';
 import { givesUp } from '../../src/treasury/retry-policy.js';
 import { startApp } from '../support/app.js';
@@ -436,12 +437,12 @@ describe('treasury program messages', () => {
     });
 
     it('rejects a message that fails on a Postgres data error and copies it to the DLQ again on redelivery', async () => {
-      const message = raw({
-        type: 'RECONCILIATION_BATCH_COMPLETED',
-        batchId: unique('B'),
-        payload: { programCount: 2 ** 31 },
-      });
+      const message = raw({ type: 'RECONCILIATION_BATCH_COMPLETED', batchId: unique('B'), payload: { programCount: 2 } });
+      const insert = vi
+        .spyOn(app.get(BatchRepository), 'insertBatch')
+        .mockImplementationOnce(async (tx) => void (await tx.$executeRaw`SELECT 1 / 0`));
       const error: unknown = await processor.process(message).catch((cause: unknown) => cause);
+      insert.mockRestore();
       expect(givesUp(error, 1, 10)).toBe(true);
 
       const before = publisher.sent.length;

@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { Counter, Gauge, Histogram } from 'prom-client';
 import type { Env } from '../config/env.js';
 import { MetricsServer } from '../metrics/metrics.server.js';
@@ -20,6 +21,7 @@ export class InboundMetrics {
   private readonly snapshotBreaks: Counter;
   private readonly consumerUp: Gauge;
   private readonly failures: Counter;
+  private readonly pending = new AsyncLocalStorage<(() => void)[]>();
 
   constructor(metrics: MetricsServer, config: ConfigService<Env, true>) {
     this.clockSkewToleranceMs = config.get('CLOCK_SKEW_TOLERANCE_SECONDS', { infer: true }) * 1000;
@@ -88,18 +90,29 @@ export class InboundMetrics {
     this.failures.inc({ transient: String(transient) });
   }
 
+  async afterCommit<T>(work: () => Promise<T>): Promise<T> {
+    const buffer: (() => void)[] = [];
+    const result = await this.pending.run(buffer, work);
+    buffer.forEach((record) => record());
+    return result;
+  }
+
   alert(alert: string, message: string): void {
-    this.alerts.inc({ alert });
-    this.logger.error(`${alert}: ${message}`);
+    this.record(() => {
+      this.alerts.inc({ alert });
+      this.logger.error(`${alert}: ${message}`);
+    });
   }
 
   warning(alert: string, message: string): void {
-    this.alerts.inc({ alert });
-    this.logger.warn(`${alert}: ${message}`);
+    this.record(() => {
+      this.alerts.inc({ alert });
+      this.logger.warn(`${alert}: ${message}`);
+    });
   }
 
   snapshotBreak(result: string): void {
-    this.snapshotBreaks.inc({ result });
+    this.record(() => this.snapshotBreaks.inc({ result }));
   }
 
   received(topic: string, brokerTimestamp: Date, readAt: Date): void {
@@ -121,7 +134,7 @@ export class InboundMetrics {
   }
 
   decided(type: string, outcome: string): void {
-    this.outcomes.inc({ type: KNOWN_TYPES.has(type) ? type : 'UNKNOWN', outcome });
+    this.record(() => this.outcomes.inc({ type: KNOWN_TYPES.has(type) ? type : 'UNKNOWN', outcome }));
   }
 
   deadLettered(reason: string): void {
@@ -130,6 +143,12 @@ export class InboundMetrics {
   }
 
   duplicate(outcome: string): void {
-    this.duplicates.inc({ outcome });
+    this.record(() => this.duplicates.inc({ outcome }));
+  }
+
+  private record(write: () => void): void {
+    const buffer = this.pending.getStore();
+    if (buffer) buffer.push(write);
+    else write();
   }
 }

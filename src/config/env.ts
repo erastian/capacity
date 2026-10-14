@@ -30,9 +30,11 @@ export const SASL_MECHANISMS = [
   'SCRAM-SHA-512',
 ] as const;
 
+const MAX_TIMER_MS = 2 ** 31 - 1;
+
 export class Env {
   @IsIn(NODE_ENVS)
-  NODE_ENV: (typeof NODE_ENVS)[number] = 'development';
+  NODE_ENV: (typeof NODE_ENVS)[number] = 'production';
 
   @Type(() => Number)
   @IsInt()
@@ -61,11 +63,13 @@ export class Env {
   @Type(() => Number)
   @IsInt()
   @Min(100)
+  @Max(MAX_TIMER_MS)
   DB_TX_MAX_WAIT_MS = 5000;
 
   @Type(() => Number)
   @IsInt()
   @Min(100)
+  @Max(MAX_TIMER_MS)
   DB_TX_TIMEOUT_MS = 10000;
 
   @IsTimeZone()
@@ -104,11 +108,13 @@ export class Env {
   @Type(() => Number)
   @IsInt()
   @Min(1000)
+  @Max(MAX_TIMER_MS)
   MONITOR_INTERVAL_MS = 60_000;
 
   @Type(() => Number)
   @IsInt()
   @Min(60_000)
+  @Max(MAX_TIMER_MS)
   INTERNAL_RECONCILIATION_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
   @Type(() => Number)
@@ -133,6 +139,7 @@ export class Env {
   @Type(() => Number)
   @IsInt()
   @Min(1000)
+  @Max(MAX_TIMER_MS)
   CLEANUP_INTERVAL_MS = 60 * 60 * 1000;
 
   @Type(() => Number)
@@ -143,11 +150,13 @@ export class Env {
   @Type(() => Number)
   @IsInt()
   @Min(1000)
+  @Max(MAX_TIMER_MS)
   RECONCILIATION_BATCH_CHECK_INTERVAL_MS = 60_000;
 
   @Type(() => Number)
   @IsInt()
   @Min(1000)
+  @Max(MAX_TIMER_MS)
   PARKED_SWEEP_INTERVAL_MS = 60_000;
 
   @Type(() => Number)
@@ -191,6 +200,7 @@ export class Env {
   @Type(() => Number)
   @IsInt()
   @Min(10)
+  @Max(MAX_TIMER_MS)
   OUTBOX_POLL_INTERVAL_MS = 500;
 
   @Type(() => Number)
@@ -202,6 +212,7 @@ export class Env {
   @Type(() => Number)
   @IsInt()
   @Min(100)
+  @Max(MAX_TIMER_MS)
   OUTBOX_LEADER_RETRY_MS = 5000;
 
   @IsUrl({ require_tld: false, require_protocol: true })

@@ -14,7 +14,7 @@ const VALID = {
 describe('validateEnv', () => {
   it('applies defaults', () => {
     expect(validateEnv(VALID)).toMatchObject({
-      NODE_ENV: 'development',
+      NODE_ENV: 'production',
       PORT: 3000,
       METRICS_PORT: 9464,
       LOG_LEVEL: 'info',

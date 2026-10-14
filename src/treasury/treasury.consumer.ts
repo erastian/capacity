@@ -17,6 +17,7 @@ import { setTimeout } from 'node:timers/promises';
 import type { Env } from '../config/env.js';
 import { isTransient } from '../shared/db/sql-state.js';
 import { kafkaConnection, Topic } from '../shared/kafka/kafka.options.js';
+import { Clock } from '../shared/time/clock.js';
 import { Periodic } from '../shared/time/periodic.js';
 import type { RawMessage } from './adapter/envelope.types.js';
 import { InboundMetrics } from './inbound.metrics.js';
@@ -56,6 +57,7 @@ export class TreasuryConsumer implements OnApplicationBootstrap, BeforeApplicati
   constructor(
     private readonly processor: InboundProcessor,
     private readonly metrics: InboundMetrics,
+    private readonly clock: Clock,
     config: ConfigService<Env, true>,
   ) {
     this.sweepInterval = config.get('PARKED_SWEEP_INTERVAL_MS', { infer: true });
@@ -112,7 +114,9 @@ export class TreasuryConsumer implements OnApplicationBootstrap, BeforeApplicati
         this.logger.log(`Consuming ${TOPICS.join(', ')}`);
         for await (const message of this.stream) {
           failures = 0;
-          if (!(await this.handle(toRaw(message)))) break;
+          const raw = toRaw(message);
+          this.metrics.received(raw.topic, raw.timestamp, this.clock.now());
+          if (!(await this.handle(raw))) break;
           await message.commit();
         }
       } catch (error) {

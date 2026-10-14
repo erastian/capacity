@@ -1,20 +1,11 @@
-import {
-  HttpStatus,
-  Injectable,
-  OnApplicationShutdown,
-  OnModuleInit,
-} from '@nestjs/common';
+import { Injectable, OnApplicationShutdown, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { Prisma, PrismaClient } from '../../generated/prisma/client.js';
 import type { Env } from '../../config/env.js';
-import { AppError } from '../errors/app-error.js';
 import { boundedConnection } from './pg-options.js';
 
 export type Tx = Prisma.TransactionClient;
-
-const TRANSACTION_UNAVAILABLE = 'P2028';
-const START_TIMED_OUT = 'Unable to start a transaction in the given time';
 
 @Injectable()
 export class PrismaService
@@ -49,24 +40,10 @@ export class PrismaService
     work: (tx: Tx) => Promise<T>,
     options: { isolationLevel?: Prisma.TransactionIsolationLevel; timeout?: number } = {},
   ): Promise<T> {
-    try {
-      return await this.$transaction(work, {
-        maxWait: this.maxWait,
-        timeout: options.timeout ?? this.timeout,
-        isolationLevel: options.isolationLevel,
-      });
-    } catch (error) {
-      if (
-        error instanceof Prisma.PrismaClientKnownRequestError &&
-        error.code === TRANSACTION_UNAVAILABLE &&
-        error.message.includes(START_TIMED_OUT)
-      ) {
-        throw new AppError(HttpStatus.SERVICE_UNAVAILABLE, 'BUSY', {
-          detail: 'Database is busy, retry later',
-          headers: { 'retry-after': '1' },
-        });
-      }
-      throw error;
-    }
+    return this.$transaction(work, {
+      maxWait: this.maxWait,
+      timeout: options.timeout ?? this.timeout,
+      isolationLevel: options.isolationLevel,
+    });
   }
 }

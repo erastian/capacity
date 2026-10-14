@@ -7,6 +7,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import type { FastifyReply, FastifyRequest } from 'fastify';
+import { isPoolExhausted, isTransient } from '../db/sql-state.js';
 import { AppError } from './app-error.js';
 import type { Problem } from './errors.types.js';
 import { problem, PROBLEM_CONTENT_TYPE } from './problem.js';
@@ -40,6 +41,9 @@ export class ProblemFilter implements ExceptionFilter {
     if (exception instanceof AppError) {
       void reply.headers(exception.headers);
     }
+    if (isTransient(exception)) {
+      void reply.header('retry-after', '1');
+    }
 
     void reply.status(body.status).type(PROBLEM_CONTENT_TYPE).send(body);
   }
@@ -66,6 +70,24 @@ export class ProblemFilter implements ExceptionFilter {
         status,
         code,
         detail: status < 500 ? exception.message : undefined,
+      });
+    }
+
+    if (isPoolExhausted(exception)) {
+      return problem({
+        ...context,
+        status: HttpStatus.SERVICE_UNAVAILABLE,
+        code: 'BUSY',
+        detail: 'Database is busy, retry later',
+      });
+    }
+
+    if (isTransient(exception)) {
+      return problem({
+        ...context,
+        status: HttpStatus.SERVICE_UNAVAILABLE,
+        code: 'DATABASE_UNAVAILABLE',
+        detail: 'Database is temporarily unavailable, retry later',
       });
     }
 

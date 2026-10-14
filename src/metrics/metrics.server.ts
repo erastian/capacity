@@ -47,8 +47,12 @@ export class MetricsServer
 
     const port = this.config.get('METRICS_PORT', { infer: true });
     await new Promise<void>((resolve, reject) => {
-      this.server!.once('error', reject).listen(port, '0.0.0.0', resolve);
+      this.server!.once('error', reject).listen(port, '0.0.0.0', () => {
+        this.server!.off('error', reject);
+        resolve();
+      });
     });
+    this.server.on('error', (error) => this.logger.error(error));
     this.logger.log(
       `Metrics listening on ${listenUrls(this.port!, '/metrics').join(', ')}`,
     );

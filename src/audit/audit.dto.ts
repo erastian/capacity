@@ -1,11 +1,13 @@
 import { IsISO8601, IsIn, IsOptional, IsUUID, Matches } from 'class-validator';
 import { IDENTIFIER } from '../shared/domain/identifier.js';
 import { PageQuery } from '../shared/http/pagination.js';
+import { ISO_INSTANT } from '../shared/time/instant.js';
 import { BooleanFlag } from '../shared/validation/boolean-flag.js';
 
 const CODE = /^[A-Z_]{1,64}$/;
 const IDENTIFIER_MESSAGE = { message: '$property must be 1-128 characters of [A-Za-z0-9._:/-]' };
 const CODE_MESSAGE = { message: '$property must be an upper-case code' };
+const INSTANT_MESSAGE = { message: '$property must be a date-time with a time zone, e.g. 2026-01-31T00:00:00Z' };
 
 export class BreaksQuery extends PageQuery {
   @IsOptional()
@@ -94,9 +96,11 @@ export class DeclineJournalQuery extends PageQuery {
 
   @IsOptional()
   @IsISO8601({ strict: true })
+  @Matches(ISO_INSTANT, INSTANT_MESSAGE)
   from?: string;
 
   @IsOptional()
   @IsISO8601({ strict: true })
+  @Matches(ISO_INSTANT, INSTANT_MESSAGE)
   to?: string;
 }
