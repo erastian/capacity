@@ -1,1 +1,0 @@
-GRANT UPDATE ("awaiting_kind", "awaiting_ref") ON "parked_message" TO capacity_app;

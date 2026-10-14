@@ -262,6 +262,15 @@ CREATE TABLE "idempotency_record" (
     CONSTRAINT "idempotency_record_pkey" PRIMARY KEY ("client_id","key")
 );
 
+-- CreateTable
+CREATE TABLE "reconciliation_checkpoint" (
+    "check" TEXT NOT NULL,
+    "watermark" TEXT NOT NULL,
+    "updated_at" TIMESTAMPTZ(3) NOT NULL,
+
+    CONSTRAINT "reconciliation_checkpoint_pkey" PRIMARY KEY ("check")
+);
+
 -- CreateIndex
 CREATE UNIQUE INDEX "program_external_id_key" ON "program"("external_id");
 
@@ -282,6 +291,12 @@ CREATE UNIQUE INDEX "reservation_invoice_id_key" ON "reservation"("invoice_id");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "reservation_funding_ref_key" ON "reservation"("funding_ref");
+
+-- CreateIndex
+CREATE INDEX "reservation_program_id_created_at_id_idx" ON "reservation"("program_id", "created_at" DESC, "id" DESC);
+
+-- CreateIndex
+CREATE INDEX "reservation_updated_at_idx" ON "reservation"("updated_at");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "reservation_funding_funding_ref_key" ON "reservation_funding"("funding_ref");
@@ -329,6 +344,9 @@ CREATE INDEX "processed_message_program_id_processed_at_idx" ON "processed_messa
 CREATE INDEX "processed_message_program_external_id_idx" ON "processed_message"("program_external_id");
 
 -- CreateIndex
+CREATE INDEX "processed_message_program_external_id_processed_at_message__idx" ON "processed_message"("program_external_id", "processed_at" DESC, "message_id" DESC);
+
+-- CreateIndex
 CREATE INDEX "parked_message_awaiting_kind_awaiting_ref_idx" ON "parked_message"("awaiting_kind", "awaiting_ref");
 
 -- CreateIndex
@@ -345,6 +363,9 @@ CREATE INDEX "reservation_decline_program_id_created_at_idx" ON "reservation_dec
 
 -- CreateIndex
 CREATE INDEX "reservation_decline_invoice_id_idx" ON "reservation_decline"("invoice_id");
+
+-- CreateIndex
+CREATE INDEX "reservation_decline_invoice_id_created_by_created_at_idx" ON "reservation_decline"("invoice_id", "created_by", "created_at" DESC);
 
 -- CreateIndex
 CREATE UNIQUE INDEX "reconciliation_batch_completed_message_id_key" ON "reconciliation_batch"("completed_message_id");
@@ -529,6 +550,10 @@ CREATE INDEX "parked_message_unresolved_idx" ON "parked_message"("awaiting_kind"
 -- Indexes: outbox_event
 CREATE INDEX "outbox_event_unpublished_idx" ON "outbox_event"("id") WHERE "published_at" IS NULL;
 
+-- Indexes: reservation
+CREATE INDEX "reservation_live_program_id_idx" ON "reservation"("program_id")
+    WHERE "status" IN ('ACTIVE', 'PARTIALLY_RELEASED');
+
 -- Checks: reservation_decline
 ALTER TABLE "reservation_decline"
     ADD CONSTRAINT "reservation_decline_amount_check" CHECK ("requested_amount" > 0 AND "requested_currency" ~ '^[A-Z]{3}$');
@@ -559,13 +584,16 @@ GRANT SELECT, INSERT ON "reservation_funding" TO capacity_app;
 GRANT UPDATE ("returned_at", "return_message_id") ON "reservation_funding" TO capacity_app;
 
 GRANT SELECT, INSERT ON "parked_message" TO capacity_app;
-GRANT UPDATE ("resolved_at") ON "parked_message" TO capacity_app;
+GRANT UPDATE ("resolved_at", "awaiting_kind", "awaiting_ref") ON "parked_message" TO capacity_app;
 
 GRANT SELECT, INSERT ON "outbox_event" TO capacity_app;
 GRANT UPDATE ("published_at") ON "outbox_event" TO capacity_app;
 
 GRANT SELECT, INSERT ON "reconciliation_batch" TO capacity_app;
 GRANT UPDATE ("completed_at", "alerted_at") ON "reconciliation_batch" TO capacity_app;
+
+GRANT SELECT, INSERT ON "reconciliation_checkpoint" TO capacity_app;
+GRANT UPDATE ("watermark", "updated_at") ON "reconciliation_checkpoint" TO capacity_app;
 
 GRANT SELECT, INSERT ON "reservation_release", "capacity_ledger", "processed_message", "fx_rate", "reservation_decline", "idempotency_record" TO capacity_app;
 
