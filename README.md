@@ -144,6 +144,9 @@ Envelope: `messageId`, `type`, `schemaVersion`, `programId`, `batchId`, `version
 - Monitors keep their last state in memory: with several instances each logs its own transitions; Prometheus aggregates the gauges.
 - Records are never deleted by the module (except the outbox transport and expired idempotency keys). Retention follows the bank's policy (at least the regulatory minimum, e.g. FCA record keeping, but not forever under UK GDPR) and would use time partitions.
 - Scaling path for the relay: shard by `hash(program_id) % N`. An alternative to the relay is CDC (Debezium).
+- The capacity ledger records movements of limit, utilisation and reservations only. Status changes of a programme are not ledger entries: their history is the inbox and the programme's `status_version`.
+- A reconciliation batch counts every distinct programme snapshot received under its `batchId`, rejected ones included: the batch checks delivery, and a rejected snapshot already has its own status and break.
+- `DB_TX_MAX_WAIT_MS` (5 s) bounds the wait for a pooled connection. A burst beyond the pool gets `503 BUSY` with `Retry-After: 1`; the client retries with the same `Idempotency-Key`. The e2e test with 100 concurrent reservations raises the wait to 30 s, since it asserts the capacity invariant, not queueing.
 - The DLQ is a copy for operations; there is no automatic redrive. A fixed message is resent by treasury under a new `messageId`.
 - A parked message that keeps failing on replay holds the queue of its programme (order is preserved over progress) and raises `PARKED_REPLAY_FAILED`; other programmes are not affected.
 - A message that reverses another programme's release (`PROGRAM_MISMATCH`) locks two programmes. With several instances on different partitions two such messages can deadlock; Postgres detects it within `deadlock_timeout` and the consumer retries. Locking in a fixed order is the fix if it shows up in practice.

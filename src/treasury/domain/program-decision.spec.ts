@@ -112,7 +112,7 @@ describe('single field messages', () => {
         { type: 'PROGRAM_STATUS_CHANGED', programId: 'P1', status: { value: 'SUSPENDED', reason: 'review', version: 3n } },
         program(),
       ),
-    ).toMatchObject({ outcome: 'APPLIED', changes: { status: { value: 'SUSPENDED' } } });
+    ).toMatchObject({ outcome: 'APPLIED', changes: { status: { value: 'SUSPENDED' } }, ledger: null });
   });
 });
 
@@ -128,6 +128,7 @@ describe('reinstatement', () => {
     expect(decideProgramCommand(reinstate(3n), program({ status: 'CLOSED' }))).toMatchObject({
       outcome: 'APPLIED',
       changes: { status: { value: 'ACTIVE', reason: 'AMD-1', version: 3n } },
+      ledger: null,
     });
   });
 

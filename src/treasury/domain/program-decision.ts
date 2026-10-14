@@ -186,7 +186,7 @@ export function decideProgramCommand(command: ProgramCommand, program: ProgramVi
       const { decision, rejection } = decideStatus(program, command.status);
       if (rejection) return rejection;
       return decision === 'apply'
-        ? { outcome: 'APPLIED', changes: { status: command.status }, ledger: 'TREASURY_SNAPSHOT' }
+        ? { outcome: 'APPLIED', changes: { status: command.status }, ledger: null }
         : { outcome: 'STALE' };
     }
 
@@ -209,7 +209,7 @@ export function decideProgramCommand(command: ProgramCommand, program: ProgramVi
       if (decision === 'conflict') {
         return versionConflict('status', command.version, program.status, 'ACTIVE');
       }
-      return { outcome: 'APPLIED', changes: { status: incoming }, ledger: 'TREASURY_SNAPSHOT' };
+      return { outcome: 'APPLIED', changes: { status: incoming }, ledger: null };
     }
   }
 }

@@ -57,6 +57,6 @@ export type LedgerKind =
 
 export type ProgramPlan =
   | { outcome: 'APPLIED'; create: NewProgram; ledger: LedgerKind }
-  | { outcome: 'APPLIED'; changes: ProgramChanges; ledger: LedgerKind }
+  | { outcome: 'APPLIED'; changes: ProgramChanges; ledger: LedgerKind | null }
   | { outcome: 'STALE' }
   | { outcome: 'REJECTED'; reason: BreakReason; break: BreakSpec };

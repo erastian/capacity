@@ -661,14 +661,16 @@ export class InboundProcessor {
         : await this.repository.updateProgram(tx, program!, plan.changes, asOf);
 
     await inbox('APPLIED', after.id);
-    await this.repository.insertTreasuryLedger(
-      tx,
-      after.id,
-      plan.ledger,
-      before ?? ZERO_BALANCES(after),
-      balancesOf(after),
-      envelope.messageId,
-    );
+    if (plan.ledger) {
+      await this.repository.insertTreasuryLedger(
+        tx,
+        after.id,
+        plan.ledger,
+        before ?? ZERO_BALANCES(after),
+        balancesOf(after),
+        envelope.messageId,
+      );
+    }
     await this.limitExcess(tx, after, before, envelope.messageId);
     if (command.type === 'PROGRAM_SNAPSHOT') await this.resolveListedBreaks(tx, command, after, envelope.messageId);
     await this.status(tx, context, after, 'ACCP');
