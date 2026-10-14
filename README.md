@@ -23,6 +23,7 @@ A detailed design specification (`specifications.md`, ~800 lines: data model, st
 - **Node.js 24** (`engines: >=24 <25`) with npm 11. Node 24 also runs the TypeScript treasury simulator directly, no build step.
 - Free ports: `3000` (API), `9464` (metrics), `5432` (Postgres), `8080` (Keycloak), `9092` (Kafka), `8081` (Kafka UI).
 - Internet access for `npm ci`: the npm registry and `binaries.prisma.sh` (the Prisma CLI downloads its schema engine for migrations at install). Nothing is compiled locally: the Kafka client is pure TypeScript and the Prisma query layer runs on the `pg` driver adapter.
+- npm 11 blocks dependency install scripts by default. `allowScripts` in `package.json` permits only the Prisma ones (Node version check, schema engine download) and denies the optional ones (`ssh2`, `cpu-features`, `protobufjs`), so `npm ci` runs without `node-gyp` and `npm install-scripts ls` is empty.
 
 ## Quick start
 
