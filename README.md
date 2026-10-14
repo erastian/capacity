@@ -18,17 +18,18 @@ Key decisions in one breath: Postgres is the single source of truth and the capa
   | `apache/kafka` | `4.3.1` | compose (broker and one-shot `kafka-init`), e2e tests |
   | `ghcr.io/kafbat/kafka-ui` | `v1.4.2` | compose (Kafka UI) |
   | `testcontainers/ryuk` | pulled by Testcontainers | e2e tests (container cleanup) |
-- **Node.js 24** (`engines: >=24 <25`) with npm 11. Node 24 also runs the TypeScript treasury simulator directly, no build step.
+- **Node.js 24** (`engines: >=24 <25`) with npm 11.19 or later (bundled with Node 24.21; with an older Node 24, `npm install -g npm@11`). Node 24 also runs the TypeScript treasury simulator directly, no build step.
 - Free ports: `3000` (API), `9464` (metrics), `5432` (Postgres), `8080` (Keycloak), `9092` (Kafka), `8081` (Kafka UI).
 - Internet access for `npm ci`: the npm registry and `binaries.prisma.sh` (the Prisma CLI downloads its schema engine for migrations at install). Nothing is compiled locally: the Kafka client is pure TypeScript and the Prisma query layer runs on the `pg` driver adapter.
-- npm 11 blocks dependency install scripts by default. `allowScripts` in `package.json` permits only the Prisma ones (Node version check, schema engine download) and denies the optional ones (`ssh2`, `cpu-features`, `protobufjs`), so `npm ci` runs without `node-gyp` and `npm install-scripts ls` is empty.
+- npm 11 blocks dependency install scripts by default. `allowScripts` in `package.json` permits only the Prisma ones (Node version check, schema engine download) and denies the optional ones (`ssh2`, `cpu-features`, `protobufjs`), so `npm ci` runs without `node-gyp` and `npm install-scripts ls` is empty. An older npm ignores `allowScripts` and runs every install script, as npm always did.
 
 ## Quick start
 
 ```bash
 cp .env.example .env
-docker compose up -d                 # Postgres, Keycloak (realm imported), Kafka with SASL + ACLs, Kafka UI
-npm ci                               # postinstall runs prisma generate into src/generated/prisma (reads .env)
+docker compose up -d --wait         # Postgres, Keycloak (realm imported), Kafka with SASL, Kafka UI; returns when healthy
+docker compose wait kafka-init       # topics and ACLs created
+npm ci                               # postinstall runs prisma generate into src/generated/prisma (needs no .env)
 npx prisma migrate deploy            # runs as the schema owner role, see "Database roles"
 npm run start:dev                    # API on :3000, metrics on :9464
 

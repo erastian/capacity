@@ -7,6 +7,13 @@ export interface SimulatorConfig {
   treasury: { username: string; password: string };
 }
 
+export type Credentials = Record<string, string>;
+
+export interface CachedToken {
+  value: string;
+  expiresAt: number;
+}
+
 export interface Money {
   amount: string;
   currency: string;

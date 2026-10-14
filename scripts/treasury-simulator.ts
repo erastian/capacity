@@ -2,6 +2,8 @@ import { ProduceAcks, Producer, stringSerializers } from '@platformatic/kafka';
 import { randomUUID } from 'node:crypto';
 import { setTimeout as sleep } from 'node:timers/promises';
 import type {
+  CachedToken,
+  Credentials,
   Money,
   ProgramMessage,
   Quote,
@@ -24,19 +26,49 @@ const config: SimulatorConfig = {
 const unique = (prefix: string) => `${prefix}-${randomUUID().slice(0, 8)}`;
 let quoteVersion = BigInt(Date.now()) * 1000n;
 
-async function token(form: Record<string, string>): Promise<string> {
-  const res = await fetch(config.tokenUrl, { method: 'POST', body: new URLSearchParams(form) });
+const ORIGINATION: Credentials = {
+  grant_type: 'client_credentials',
+  client_id: config.originationClient.id,
+  client_secret: config.originationClient.secret,
+};
+const AUDITOR: Credentials = { grant_type: 'password', client_id: 'capacity-local', ...config.auditor };
+
+const tokens = new Map<Credentials, CachedToken>();
+
+async function token(credentials: Credentials): Promise<string> {
+  const cached = tokens.get(credentials);
+  if (cached && cached.expiresAt > Date.now()) return cached.value;
+  const res = await fetch(config.tokenUrl, { method: 'POST', body: new URLSearchParams(credentials) });
   if (!res.ok) throw new Error(`token request failed: ${res.status} ${await res.text()}`);
-  return ((await res.json()) as { access_token: string }).access_token;
+  const body = (await res.json()) as { access_token: string; expires_in: number };
+  tokens.set(credentials, { value: body.access_token, expiresAt: Date.now() + (body.expires_in - 30) * 1000 });
+  return body.access_token;
 }
 
-async function api(bearer: string, method: string, path: string, body?: unknown, headers: Record<string, string> = {}) {
+async function api(
+  as: Credentials,
+  method: string,
+  path: string,
+  body?: unknown,
+  headers: Record<string, string> = {},
+) {
   const res = await fetch(`${config.apiUrl}${path}`, {
     method,
-    headers: { authorization: `Bearer ${bearer}`, 'content-type': 'application/json', ...headers },
+    headers: { authorization: `Bearer ${await token(as)}`, 'content-type': 'application/json', ...headers },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
-  return { status: res.status, body: (await res.json()) as Record<string, unknown> };
+  const text = await res.text();
+  try {
+    return { status: res.status, body: (text ? JSON.parse(text) : {}) as Record<string, unknown> };
+  } catch {
+    throw new Error(`${method} ${path} answered ${res.status}: ${text.slice(0, 200)}`);
+  }
+}
+
+async function list<T>(path: string): Promise<T[]> {
+  const res = await api(AUDITOR, 'GET', path);
+  if (res.status !== 200) throw new Error(`GET ${path} answered ${res.status} ${String(res.body.code ?? '')}`);
+  return res.body.items as T[];
 }
 
 const snapshot = (limit: string, extra: Record<string, unknown> = {}) => ({
@@ -201,32 +233,32 @@ async function main(): Promise<void> {
     return;
   }
 
+  await token(ORIGINATION);
+  await token(AUDITOR);
   const producer = new Producer({
     clientId: 'treasury-simulator',
-    bootstrapBrokers: [config.brokers],
+    bootstrapBrokers: config.brokers
+      .split(',')
+      .map((broker) => broker.trim())
+      .filter(Boolean),
     sasl: { mechanism: 'PLAIN', ...config.treasury },
     serializers: stringSerializers,
     idempotent: true,
     acks: ProduceAcks.ALL,
+    retries: 5,
   });
-  const origination = await token({
-    grant_type: 'client_credentials',
-    client_id: config.originationClient.id,
-    client_secret: config.originationClient.secret,
-  });
-  const auditor = await token({ grant_type: 'password', client_id: 'capacity-local', ...config.auditor });
 
   try {
     for (const name of names) {
       console.log(`\n== ${name}: ${scenarios[name]!.description}`);
-      await scenarios[name]!.run(world(producer, origination, auditor));
+      await scenarios[name]!.run(world(producer));
     }
   } finally {
     await producer.close();
   }
 }
 
-function world(producer: Producer<string, string, string, string>, origination: string, auditor: string): World {
+function world(producer: Producer<string, string, string, string>): World {
   const programId = unique('P');
   const pending = new Set<string>();
   const log = (line: string) => console.log(`   ${line}`);
@@ -269,7 +301,7 @@ function world(producer: Producer<string, string, string, string>, origination: 
     reserve: async (invoice: Money & { dueDate?: string; programId?: string }) => {
       const invoiceId = unique('INV');
       const res = await api(
-        origination,
+        ORIGINATION,
         'POST',
         '/v1/reservations',
         {
@@ -290,11 +322,11 @@ function world(producer: Producer<string, string, string, string>, origination: 
       while (pending.size > 0 && Date.now() < deadline) {
         for (const messageId of pending) {
           const [inbox, parked] = await Promise.all([
-            api(auditor, 'GET', `/v1/audit/inbox?messageId=${messageId}`),
-            api(auditor, 'GET', `/v1/audit/parked?unresolved=true&limit=200`),
+            list(`/v1/audit/inbox?messageId=${messageId}`),
+            list<{ messageId: string }>(`/v1/audit/parked?unresolved=true&limit=200`),
           ]);
-          const decided = (inbox.body.items as unknown[]).length > 0;
-          const waiting = (parked.body.items as { messageId: string }[]).some((item) => item.messageId === messageId);
+          const decided = inbox.length > 0;
+          const waiting = parked.some((item) => item.messageId === messageId);
           if (decided || waiting) pending.delete(messageId);
         }
         if (pending.size > 0) await sleep(300);
@@ -303,19 +335,18 @@ function world(producer: Producer<string, string, string, string>, origination: 
     },
 
     openBreaks: async () => {
-      const breaks = await api(auditor, 'GET', `/v1/breaks?programId=${programId}&open=true`);
-      return (breaks.body.items as { id: string }[]).map((item) => item.id);
+      const breaks = await list<{ id: string }>(`/v1/breaks?programId=${programId}&open=true`);
+      return breaks.map((item) => item.id);
     },
 
     showRates: async () => {
-      const rates = await api(auditor, 'GET', '/v1/fx-rates?limit=200');
-      for (const item of rates.body.items as Record<string, unknown>[]) {
+      for (const item of await list<Record<string, unknown>>('/v1/fx-rates?limit=200')) {
         log(`   ${item.from}/${item.to} ${String(item.rateType).padEnd(10)} ${String(item.rate ?? '-').padEnd(10)} ${item.status} as of ${item.asOf}`);
       }
     },
 
     show: async (target = programId) => {
-      const availability = await api(auditor, 'GET', `/v1/programs/${target}/availability`);
+      const availability = await api(AUDITOR, 'GET', `/v1/programs/${target}/availability`);
       if (availability.status !== 200) {
         log(`programme ${target}: ${availability.body.code}`);
       } else {
@@ -325,16 +356,25 @@ function world(producer: Producer<string, string, string, string>, origination: 
             `reserved ${a.reserved} (funded ${a.funded}), available ${a.available}, over limit ${a.overLimit} ${a.currency}`,
         );
       }
-      const inbox = await api(auditor, 'GET', `/v1/audit/inbox?programId=${target}&limit=50`);
-      for (const item of (inbox.body.items as Record<string, unknown>[]).reverse()) {
+      const inbox = await list<Record<string, unknown>>(`/v1/audit/inbox?programId=${target}&limit=50`);
+      for (const item of inbox.reverse()) {
         log(`   ${String(item.type).padEnd(28)} ${String(item.outcome).padEnd(8)} ${item.reason ?? ''}`);
       }
-      const breaks = await api(auditor, 'GET', `/v1/breaks?programId=${target}&open=true`);
-      for (const item of breaks.body.items as Record<string, unknown>[]) {
+      for (const item of await list<Record<string, unknown>>(`/v1/breaks?programId=${target}&open=true`)) {
         log(`   open break ${item.id} ${item.reason}${item.blocking ? ' (blocking)' : ''}`);
       }
     },
   };
 }
 
-await main();
+try {
+  await main();
+} catch (error) {
+  console.error(`simulator failed: ${[...new Set(messages(error))].join('; ')}`);
+  process.exitCode = 1;
+}
+
+function messages(error: unknown): string[] {
+  const { message, errors = [], cause } = error as Error & { errors?: unknown[] };
+  return [message, ...errors.flatMap(messages), ...(cause ? messages(cause) : [])].filter(Boolean);
+}
