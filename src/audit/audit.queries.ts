@@ -67,19 +67,24 @@ export class AuditQueries {
       ORDER BY b.opened_at DESC, b.id DESC
       LIMIT ${limit + 1}
     `;
-    return toPage(rows, limit, (row) => [row.opened_at.toISOString(), row.id], (row) => ({
-      id: row.id,
-      programId: row.program_id,
-      reservationId: row.reservation_id,
-      invoiceId: row.invoice_id,
-      reason: row.reason,
-      blocking: row.blocking,
-      details: row.details,
-      messageId: row.message_id,
-      openedAt: row.opened_at.toISOString(),
-      resolvedAt: iso(row.resolved_at),
-      resolutionMessageId: row.resolution_message_id,
-    }));
+    return toPage(
+      rows,
+      limit,
+      (row) => [row.opened_at.toISOString(), row.id],
+      (row) => ({
+        id: row.id,
+        programId: row.program_id,
+        reservationId: row.reservation_id,
+        invoiceId: row.invoice_id,
+        reason: row.reason,
+        blocking: row.blocking,
+        details: row.details,
+        messageId: row.message_id,
+        openedAt: row.opened_at.toISOString(),
+        resolvedAt: iso(row.resolved_at),
+        resolutionMessageId: row.resolution_message_id,
+      }),
+    );
   }
 
   async ledger(programId: string, limit: number, cursor: string | undefined): Promise<Page<LedgerView>> {
@@ -98,25 +103,30 @@ export class AuditQueries {
       LIMIT ${limit + 1}
     `;
     const amount = (value: LedgerRow['reserved_delta']) => formatCapacity(toDecimal(value));
-    return toPage(rows, limit, (row) => [row.id.toString()], (row) => ({
-      id: row.id.toString(),
-      type: row.type,
-      delta: {
-        creditLimit: amount(row.credit_limit_delta),
-        externalUtilized: amount(row.external_utilized_delta),
-        reserved: amount(row.reserved_delta),
-      },
-      after: {
-        creditLimit: amount(row.credit_limit_after),
-        externalUtilized: amount(row.external_utilized_after),
-        reserved: amount(row.reserved_after),
-      },
-      currency,
-      reservationId: row.reservation_id,
-      releaseId: row.release_id,
-      messageId: row.message_id,
-      createdAt: row.created_at.toISOString(),
-    }));
+    return toPage(
+      rows,
+      limit,
+      (row) => [row.id.toString()],
+      (row) => ({
+        id: row.id.toString(),
+        type: row.type,
+        delta: {
+          creditLimit: amount(row.credit_limit_delta),
+          externalUtilized: amount(row.external_utilized_delta),
+          reserved: amount(row.reserved_delta),
+        },
+        after: {
+          creditLimit: amount(row.credit_limit_after),
+          externalUtilized: amount(row.external_utilized_after),
+          reserved: amount(row.reserved_after),
+        },
+        currency,
+        reservationId: row.reservation_id,
+        releaseId: row.release_id,
+        messageId: row.message_id,
+        createdAt: row.created_at.toISOString(),
+      }),
+    );
   }
 
   async inbox(filter: InboxFilter, limit: number, cursor: string | undefined): Promise<Page<InboxView>> {
@@ -134,19 +144,24 @@ export class AuditQueries {
       ORDER BY processed_at DESC, message_id DESC
       LIMIT ${limit + 1}
     `;
-    return toPage(rows, limit, (row) => [row.processed_at.toISOString(), row.message_id], (row) => ({
-      messageId: row.message_id,
-      type: row.type,
-      outcome: row.outcome,
-      reason: row.reason,
-      programId: row.program_external_id,
-      batchId: row.batch_id,
-      version: row.version?.toString() ?? null,
-      asOf: row.as_of.toISOString(),
-      kafkaTimestamp: row.kafka_timestamp.toISOString(),
-      coordinates: { topic: row.topic, partition: row.partition, offset: row.offset.toString() },
-      processedAt: row.processed_at.toISOString(),
-    }));
+    return toPage(
+      rows,
+      limit,
+      (row) => [row.processed_at.toISOString(), row.message_id],
+      (row) => ({
+        messageId: row.message_id,
+        type: row.type,
+        outcome: row.outcome,
+        reason: row.reason,
+        programId: row.program_external_id,
+        batchId: row.batch_id,
+        version: row.version?.toString() ?? null,
+        asOf: row.as_of.toISOString(),
+        kafkaTimestamp: row.kafka_timestamp.toISOString(),
+        coordinates: { topic: row.topic, partition: row.partition, offset: row.offset.toString() },
+        processedAt: row.processed_at.toISOString(),
+      }),
+    );
   }
 
   async parked(filter: ParkedFilter, limit: number, cursor: string | undefined): Promise<Page<ParkedView>> {
@@ -162,17 +177,22 @@ export class AuditQueries {
       ORDER BY parked_at DESC, message_id DESC
       LIMIT ${limit + 1}
     `;
-    return toPage(rows, limit, (row) => [row.parked_at.toISOString(), row.message_id], (row) => ({
-      messageId: row.message_id,
-      type: row.type,
-      programId: row.program_external_id,
-      reservationId: row.reservation_id,
-      awaiting: { kind: row.awaiting_kind, ref: row.awaiting_ref },
-      envelope: row.envelope,
-      coordinates: { topic: row.topic, partition: row.partition, offset: row.offset.toString() },
-      parkedAt: row.parked_at.toISOString(),
-      resolvedAt: iso(row.resolved_at),
-    }));
+    return toPage(
+      rows,
+      limit,
+      (row) => [row.parked_at.toISOString(), row.message_id],
+      (row) => ({
+        messageId: row.message_id,
+        type: row.type,
+        programId: row.program_external_id,
+        reservationId: row.reservation_id,
+        awaiting: { kind: row.awaiting_kind, ref: row.awaiting_ref },
+        envelope: row.envelope,
+        coordinates: { topic: row.topic, partition: row.partition, offset: row.offset.toString() },
+        parkedAt: row.parked_at.toISOString(),
+        resolvedAt: iso(row.resolved_at),
+      }),
+    );
   }
 
   async fundings(reservationId: string, limit: number, cursor: string | undefined): Promise<Page<FundingView>> {
@@ -194,13 +214,18 @@ export class AuditQueries {
       ORDER BY created_at DESC, id DESC
       LIMIT ${limit + 1}
     `;
-    return toPage(rows, limit, (row) => [row.created_at.toISOString(), row.id], (row) => ({
-      fundingRef: row.funding_ref,
-      fundedAt: row.funded_at.toISOString(),
-      messageId: row.message_id,
-      returnedAt: iso(row.returned_at),
-      returnMessageId: row.return_message_id,
-    }));
+    return toPage(
+      rows,
+      limit,
+      (row) => [row.created_at.toISOString(), row.id],
+      (row) => ({
+        fundingRef: row.funding_ref,
+        fundedAt: row.funded_at.toISOString(),
+        messageId: row.message_id,
+        returnedAt: iso(row.returned_at),
+        returnMessageId: row.return_message_id,
+      }),
+    );
   }
 
   async outbox(filter: OutboxFilter, limit: number, cursor: string | undefined): Promise<Page<OutboxView>> {
@@ -215,14 +240,19 @@ export class AuditQueries {
       ORDER BY id DESC
       LIMIT ${limit + 1}
     `;
-    return toPage(rows, limit, (row) => [row.id.toString()], (row) => ({
-      eventId: row.event_id,
-      type: row.type,
-      partitionKey: row.partition_key,
-      payload: row.payload,
-      createdAt: row.created_at.toISOString(),
-      publishedAt: iso(row.published_at),
-    }));
+    return toPage(
+      rows,
+      limit,
+      (row) => [row.id.toString()],
+      (row) => ({
+        eventId: row.event_id,
+        type: row.type,
+        partitionKey: row.partition_key,
+        payload: row.payload,
+        createdAt: row.created_at.toISOString(),
+        publishedAt: iso(row.published_at),
+      }),
+    );
   }
 
   async declines(filter: DeclineFilter, limit: number, cursor: string | undefined): Promise<Page<DeclineJournalView>> {
@@ -241,19 +271,24 @@ export class AuditQueries {
       ORDER BY d.created_at DESC, d.id DESC
       LIMIT ${limit + 1}
     `;
-    return toPage(rows, limit, (row) => [row.created_at.toISOString(), row.id], (row) => ({
-      id: row.id,
-      programId: row.program_id,
-      invoiceId: row.invoice_id,
-      requested: {
-        amount: formatAmount(toDecimal(row.requested_amount), minorUnits(row.requested_currency)),
-        currency: row.requested_currency,
-      },
-      code: row.code,
-      details: row.details,
-      createdBy: row.created_by,
-      correlationId: row.correlation_id,
-      createdAt: row.created_at.toISOString(),
-    }));
+    return toPage(
+      rows,
+      limit,
+      (row) => [row.created_at.toISOString(), row.id],
+      (row) => ({
+        id: row.id,
+        programId: row.program_id,
+        invoiceId: row.invoice_id,
+        requested: {
+          amount: formatAmount(toDecimal(row.requested_amount), minorUnits(row.requested_currency)),
+          currency: row.requested_currency,
+        },
+        code: row.code,
+        details: row.details,
+        createdBy: row.created_by,
+        correlationId: row.correlation_id,
+        createdAt: row.created_at.toISOString(),
+      }),
+    );
   }
 }

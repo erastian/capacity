@@ -1,34 +1,11 @@
 import { plainToInstance, Type } from 'class-transformer';
-import {
-  IsIn,
-  IsInt,
-  IsNotEmpty,
-  IsOptional,
-  IsString,
-  IsTimeZone,
-  IsUrl,
-  Max,
-  Min,
-  validateSync,
-} from 'class-validator';
+import { IsIn, IsInt, IsNotEmpty, IsOptional, IsString, IsTimeZone, IsUrl, Max, Min, validateSync } from 'class-validator';
 import { BooleanFlag } from '../shared/validation/boolean-flag.js';
 
 export const NODE_ENVS = ['development', 'test', 'production'] as const;
-export const LOG_LEVELS = [
-  'fatal',
-  'error',
-  'warn',
-  'info',
-  'debug',
-  'trace',
-  'silent',
-] as const;
+export const LOG_LEVELS = ['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'] as const;
 
-export const SASL_MECHANISMS = [
-  'PLAIN',
-  'SCRAM-SHA-256',
-  'SCRAM-SHA-512',
-] as const;
+export const SASL_MECHANISMS = ['PLAIN', 'SCRAM-SHA-256', 'SCRAM-SHA-512'] as const;
 
 const MAX_TIMER_MS = 2 ** 31 - 1;
 
@@ -236,9 +213,7 @@ export function validateEnv(raw: Record<string, unknown>): Env {
   const env = plainToInstance(Env, raw);
   const errors = validateSync(env, { skipMissingProperties: false });
   if (errors.length > 0) {
-    const details = errors
-      .map((e) => `${e.property}: ${Object.values(e.constraints ?? {}).join(', ')}`)
-      .join('; ');
+    const details = errors.map((e) => `${e.property}: ${Object.values(e.constraints ?? {}).join(', ')}`).join('; ');
     throw new Error(`Invalid environment: ${details}`);
   }
   return env;

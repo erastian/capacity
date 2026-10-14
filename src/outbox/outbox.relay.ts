@@ -1,9 +1,4 @@
-import {
-  BeforeApplicationShutdown,
-  Injectable,
-  Logger,
-  OnApplicationBootstrap,
-} from '@nestjs/common';
+import { BeforeApplicationShutdown, Injectable, Logger, OnApplicationBootstrap } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import pg from 'pg';
 import type { Env } from '../config/env.js';
@@ -109,10 +104,7 @@ export class OutboxRelay implements OnApplicationBootstrap, BeforeApplicationShu
     let locked: boolean;
     try {
       await connection.connect();
-      const { rows } = await connection.query<{ locked: boolean }>(
-        'SELECT pg_try_advisory_lock(hashtextextended($1, 0)) AS locked',
-        [LEADER_LOCK],
-      );
+      const { rows } = await connection.query<{ locked: boolean }>('SELECT pg_try_advisory_lock(hashtextextended($1, 0)) AS locked', [LEADER_LOCK]);
       locked = rows[0]?.locked === true;
     } catch (error) {
       await connection.end().catch(() => undefined);
@@ -143,10 +135,7 @@ export class OutboxRelay implements OnApplicationBootstrap, BeforeApplicationShu
     if (rows.length === 0) return 0;
 
     await this.publisher.publish(rows.map(toMessage));
-    await connection.query(
-      'UPDATE outbox_event SET published_at = now() WHERE id = ANY($1::bigint[])',
-      [rows.map((row) => row.id)],
-    );
+    await connection.query('UPDATE outbox_event SET published_at = now() WHERE id = ANY($1::bigint[])', [rows.map((row) => row.id)]);
     this.logger.debug(`Published ${rows.length} outbox events`);
     return rows.length;
   }

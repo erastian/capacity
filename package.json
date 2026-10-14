@@ -12,7 +12,8 @@
   "scripts": {
     "postinstall": "prisma generate",
     "build": "nest build",
-    "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\" \"scripts/**/*.ts\"",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "typecheck": "tsc --noEmit",
     "start": "nest start",
     "start:dev": "nest start --watch",

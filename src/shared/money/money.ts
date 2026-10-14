@@ -20,10 +20,7 @@ export function ceilTo(value: Decimal, places: number): Decimal {
   return value.toDecimalPlaces(places, Decimal.ROUND_CEIL);
 }
 
-export function exposure(
-  outstanding: Decimal,
-  rate: Decimal | undefined,
-): Decimal {
+export function exposure(outstanding: Decimal, rate: Decimal | undefined): Decimal {
   return rate ? ceilTo(outstanding.mul(rate), CAPACITY_SCALE) : outstanding;
 }
 

@@ -73,16 +73,10 @@ describe('treasury program messages', () => {
     return message;
   };
 
-  const program = async (externalId: string) =>
-    (await db().query('SELECT * FROM program WHERE external_id = $1', [externalId])).rows[0];
+  const program = async (externalId: string) => (await db().query('SELECT * FROM program WHERE external_id = $1', [externalId])).rows[0];
 
   const inbox = async (messageId: string) =>
-    (
-      await db().query(
-        'SELECT type::text AS type, outcome::text AS outcome, reason FROM processed_message WHERE message_id = $1',
-        [messageId],
-      )
-    ).rows[0];
+    (await db().query('SELECT type::text AS type, outcome::text AS outcome, reason FROM processed_message WHERE message_id = $1', [messageId])).rows[0];
 
   const statuses = async (messageId: string) =>
     (
@@ -95,10 +89,10 @@ describe('treasury program messages', () => {
 
   const events = async (programId: string, type: string) =>
     (
-      await db().query(
-        `SELECT payload -> 'data' AS data FROM outbox_event WHERE partition_key = $1 AND type = $2::"OutboundEventType" ORDER BY id`,
-        [programId, type],
-      )
+      await db().query(`SELECT payload -> 'data' AS data FROM outbox_event WHERE partition_key = $1 AND type = $2::"OutboundEventType" ORDER BY id`, [
+        programId,
+        type,
+      ])
     ).rows.map((row) => row.data);
 
   const ledger = async (programUuid: string) =>
@@ -111,12 +105,7 @@ describe('treasury program messages', () => {
     ).rows;
 
   const breaks = async (programUuid: string) =>
-    (
-      await db().query(
-        'SELECT reason::text AS reason, blocking, resolved_at FROM program_break WHERE program_id = $1 ORDER BY opened_at',
-        [programUuid],
-      )
-    ).rows;
+    (await db().query('SELECT reason::text AS reason, blocking, resolved_at FROM program_break WHERE program_id = $1 ORDER BY opened_at', [programUuid])).rows;
 
   describe('snapshots', () => {
     it('create the programme with versions, ledger and freshness', async () => {
@@ -164,10 +153,7 @@ describe('treasury program messages', () => {
 
       expect(await program(programId)).toBeUndefined();
       expect(await inbox(message.messageId)).toMatchObject({ outcome: 'REJECTED', reason: 'CURRENCY_MISMATCH' });
-      const { rows } = await db().query(
-        'SELECT program_id, blocking, reason::text AS reason FROM program_break WHERE program_external_id = $1',
-        [programId],
-      );
+      const { rows } = await db().query('SELECT program_id, blocking, reason::text AS reason FROM program_break WHERE program_external_id = $1', [programId]);
       expect(rows).toEqual([{ program_id: null, blocking: false, reason: 'CURRENCY_MISMATCH' }]);
       expect((await statuses(message.messageId))[0]).toMatchObject({ status: 'RJCT', reason: 'CURRENCY_MISMATCH' });
     });
@@ -243,9 +229,7 @@ describe('treasury program messages', () => {
       await send(limit(programId, '40', 6));
       await send(limit(programId, '200', 7));
 
-      expect(await events(programId, 'PROGRAM_LIMIT_EXCESS_STARTED')).toEqual([
-        expect.objectContaining({ overLimit: '10.0000', currency: 'EUR' }),
-      ]);
+      expect(await events(programId, 'PROGRAM_LIMIT_EXCESS_STARTED')).toEqual([expect.objectContaining({ overLimit: '10.0000', currency: 'EUR' })]);
       expect(await events(programId, 'PROGRAM_LIMIT_EXCESS_ENDED')).toHaveLength(1);
     });
   });
@@ -279,9 +263,7 @@ describe('treasury program messages', () => {
       const programId = unique('P');
       await send(snapshot(programId));
       await send(utilization(programId, '1200', 4));
-      expect(await events(programId, 'PROGRAM_LIMIT_EXCESS_STARTED')).toEqual([
-        expect.objectContaining({ overLimit: '200.0000', currency: 'EUR' }),
-      ]);
+      expect(await events(programId, 'PROGRAM_LIMIT_EXCESS_STARTED')).toEqual([expect.objectContaining({ overLimit: '200.0000', currency: 'EUR' })]);
     });
 
     it('reject utilization in a foreign currency with a blocking break', async () => {
@@ -334,10 +316,7 @@ describe('treasury program messages', () => {
       expect(await inbox(first.messageId)).toMatchObject({ outcome: 'STALE' });
       expect(await inbox(second.messageId)).toMatchObject({ outcome: 'APPLIED' });
       expect((await statuses(second.messageId)).map((s) => s.status)).toEqual(['PDNG', 'ACCP']);
-      const { rows } = await db().query(
-        'SELECT count(*)::int AS n FROM parked_message WHERE program_external_id = $1 AND resolved_at IS NULL',
-        [programId],
-      );
+      const { rows } = await db().query('SELECT count(*)::int AS n FROM parked_message WHERE program_external_id = $1 AND resolved_at IS NULL', [programId]);
       expect(rows[0].n).toBe(0);
     });
 
@@ -371,9 +350,7 @@ describe('treasury program messages', () => {
     it('keep a replay that fails transiently parked, raise an alert and apply it on a later sweep', async () => {
       const programId = unique('P');
       const message = await send(limit(programId, '500', 6));
-      const update = vi
-        .spyOn(app.get(ProgramStateRepository), 'updateProgram')
-        .mockRejectedValue(new Error('Connection terminated unexpectedly'));
+      const update = vi.spyOn(app.get(ProgramStateRepository), 'updateProgram').mockRejectedValue(new Error('Connection terminated unexpectedly'));
       const alerts = async () =>
         (await app.get(MetricsServer).registry.getSingleMetric('treasury_alerts_total')!.get()).values.find(
           (item) => item.labels.alert === 'PARKED_REPLAY_FAILED',
@@ -477,9 +454,7 @@ describe('treasury program messages', () => {
 
     it('rejects a message that fails on a Postgres data error and copies it to the DLQ again on redelivery', async () => {
       const message = raw({ type: 'RECONCILIATION_BATCH_COMPLETED', batchId: unique('B'), payload: { programCount: 2 } });
-      const insert = vi
-        .spyOn(app.get(BatchRepository), 'insertBatch')
-        .mockImplementationOnce(async (tx) => void (await tx.$executeRaw`SELECT 1 / 0`));
+      const insert = vi.spyOn(app.get(BatchRepository), 'insertBatch').mockImplementationOnce(async (tx) => void (await tx.$executeRaw`SELECT 1 / 0`));
       const error: unknown = await processor.process(message).catch((cause: unknown) => cause);
       insert.mockRestore();
       expect(givesUp(error, 1, 10)).toBe(true);
@@ -494,10 +469,7 @@ describe('treasury program messages', () => {
       expect((await statuses(message.messageId)).map((s) => s.status)).toEqual(['RJCT']);
 
       await processor.process({ ...message, offset: nextOffset() });
-      expect(publisher.sent.slice(before).map((m) => m.headers['dlq-reason'])).toEqual([
-        'PROCESSING_FAILED',
-        'PROCESSING_FAILED',
-      ]);
+      expect(publisher.sent.slice(before).map((m) => m.headers['dlq-reason'])).toEqual(['PROCESSING_FAILED', 'PROCESSING_FAILED']);
     });
   });
 });

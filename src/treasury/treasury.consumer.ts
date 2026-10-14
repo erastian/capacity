@@ -1,18 +1,6 @@
-import {
-  BeforeApplicationShutdown,
-  Injectable,
-  Logger,
-  OnApplicationBootstrap,
-} from '@nestjs/common';
+import { BeforeApplicationShutdown, Injectable, Logger, OnApplicationBootstrap } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import {
-  Consumer,
-  type Message,
-  type MessagesStream,
-  MessagesStreamFallbackModes,
-  MessagesStreamModes,
-  stringDeserializers,
-} from '@platformatic/kafka';
+import { Consumer, type Message, type MessagesStream, MessagesStreamFallbackModes, MessagesStreamModes, stringDeserializers } from '@platformatic/kafka';
 import { setTimeout } from 'node:timers/promises';
 import type { Env } from '../config/env.js';
 import { isTransient } from '../shared/db/sql-state.js';

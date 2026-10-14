@@ -4,15 +4,7 @@ import { isIdentifier } from '../../shared/domain/identifier.js';
 import type { ProgramStatus } from '../../shared/domain/program.types.js';
 import { isCurrency } from '../../shared/money/currency.js';
 import { AMOUNT_TEXT, fitsMinorUnits, RATE_TEXT } from '../../shared/money/money.js';
-import type {
-  Command,
-  CommandResult,
-  FxRateStatus,
-  FxRateType,
-  InvoiceCommand,
-  Money,
-  VersionedMoney,
-} from './commands.types.js';
+import type { Command, CommandResult, FxRateStatus, FxRateType, InvoiceCommand, Money, VersionedMoney } from './commands.types.js';
 import { parseVersion } from './envelope.js';
 import type { Envelope } from './envelope.types.js';
 

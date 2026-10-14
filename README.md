@@ -200,6 +200,7 @@ npm test            # unit: domain decisions, adapter, money, versioning, pagina
 npm run test:e2e    # e2e on Testcontainers: real Postgres 17 and Kafka 4.3.1
 npm run lint        # oxlint
 npm run typecheck   # tsc over src, test and scripts
+npm run format:check  # Prettier over code and JSON; docs and docker files are formatted by hand
 ```
 
 E2e tests cover: every database guard (CHECKs and grants, per role), authentication and scopes, reserve (all decline paths, idempotency, 100 concurrent reservations against a limit of 60), every treasury message type and its decision table, parking and replay order, breaks and their closing conditions, reconciliation batches, read API visibility ("A does not see B" on every endpoint), audit journals, monitors, internal reconciliation and cleanup, and the real Kafka path (relay ordering, leader failover, consumer, DLQ, and payments releasing capacity end to end: REST reservation → allocation through the broker → `RESERVATION_RELEASED` back on the bus, including an invoice in another currency paid in a third one). Failure paths are covered too: a real Postgres data error and an exhausted attempt budget end as `PROCESSING_FAILED`, a parked replay that fails on its data is rejected and the queue moves on, a transient replay failure raises `PARKED_REPLAY_FAILED` and is applied by a later sweep.

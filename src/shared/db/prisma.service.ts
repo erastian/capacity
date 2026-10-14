@@ -8,10 +8,7 @@ import { boundedConnection } from './pg-options.js';
 export type Tx = Prisma.TransactionClient;
 
 @Injectable()
-export class PrismaService
-  extends PrismaClient
-  implements OnModuleInit, OnApplicationShutdown
-{
+export class PrismaService extends PrismaClient implements OnModuleInit, OnApplicationShutdown {
   private readonly maxWait: number;
   private readonly timeout: number;
 
@@ -36,10 +33,7 @@ export class PrismaService
     await this.$disconnect();
   }
 
-  async inTransaction<T>(
-    work: (tx: Tx) => Promise<T>,
-    options: { isolationLevel?: Prisma.TransactionIsolationLevel; timeout?: number } = {},
-  ): Promise<T> {
+  async inTransaction<T>(work: (tx: Tx) => Promise<T>, options: { isolationLevel?: Prisma.TransactionIsolationLevel; timeout?: number } = {}): Promise<T> {
     return this.$transaction(work, {
       maxWait: this.maxWait,
       timeout: options.timeout ?? this.timeout,

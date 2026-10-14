@@ -2,13 +2,7 @@ import { Injectable } from '@nestjs/common';
 import type { Decimal } from 'decimal.js';
 import { toDecimal as dec } from '../../shared/db/numeric.js';
 import type { Tx } from '../../shared/db/prisma.service.js';
-import type {
-  NewRelease,
-  ReservationBalances,
-  ReservationView,
-  StoredFunding,
-  StoredRelease,
-} from '../domain/invoice-decision.types.js';
+import type { NewRelease, ReservationBalances, ReservationView, StoredFunding, StoredRelease } from '../domain/invoice-decision.types.js';
 import type { ProgramView } from '../domain/program-decision.types.js';
 import type { FundingRow, ReleaseRow, ReservationRow } from '../inbound.types.js';
 
@@ -57,18 +51,12 @@ function toRelease(row: ReleaseRow): StoredRelease {
 @Injectable()
 export class SettlementRepository {
   async findReservation(tx: Tx, invoiceId: string): Promise<ReservationView | undefined> {
-    const rows = await tx.$queryRawUnsafe<ReservationRow[]>(
-      `SELECT ${RESERVATION_COLUMNS} ${RESERVATION_FROM} WHERE r.invoice_id = $1`,
-      invoiceId,
-    );
+    const rows = await tx.$queryRawUnsafe<ReservationRow[]>(`SELECT ${RESERVATION_COLUMNS} ${RESERVATION_FROM} WHERE r.invoice_id = $1`, invoiceId);
     return rows[0] && toReservation(rows[0]);
   }
 
   async lockReservation(tx: Tx, id: string): Promise<ReservationView> {
-    const rows = await tx.$queryRawUnsafe<ReservationRow[]>(
-      `SELECT ${RESERVATION_COLUMNS} ${RESERVATION_FROM} WHERE r.id = $1::uuid FOR UPDATE OF r`,
-      id,
-    );
+    const rows = await tx.$queryRawUnsafe<ReservationRow[]>(`SELECT ${RESERVATION_COLUMNS} ${RESERVATION_FROM} WHERE r.id = $1::uuid FOR UPDATE OF r`, id);
     return toReservation(rows[0]!);
   }
 

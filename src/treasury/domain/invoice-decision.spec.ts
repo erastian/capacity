@@ -131,9 +131,7 @@ function released(plan: InvoicePlan) {
 }
 
 const rejected = (plan: InvoicePlan) =>
-  plan.outcome === 'REJECTED'
-    ? { reason: plan.reason, blocking: plan.break?.blocking, hasBreak: plan.break !== undefined }
-    : { outcome: plan.outcome };
+  plan.outcome === 'REJECTED' ? { reason: plan.reason, blocking: plan.break?.blocking, hasBreak: plan.break !== undefined } : { outcome: plan.outcome };
 
 describe('decideInvoiceCommand', () => {
   describe('invoice lookup', () => {
@@ -365,7 +363,15 @@ describe('decideInvoiceCommand', () => {
     });
 
     it('treats the same write-off resent as stale and another reason as a conflict', () => {
-      const same = stored({ reason: 'WRITE_OFF', externalRef: 'W-1', originalAmount: d('0.03'), paymentId: null, paymentAmount: null, paymentCurrency: null, writeOffReason: 'ROUNDING_TOLERANCE' });
+      const same = stored({
+        reason: 'WRITE_OFF',
+        externalRef: 'W-1',
+        originalAmount: d('0.03'),
+        paymentId: null,
+        paymentAmount: null,
+        paymentCurrency: null,
+        writeOffReason: 'ROUNDING_TOLERANCE',
+      });
       expect(decideInvoiceCommand(writeOff('0.03'), PROGRAM, paidOff, { sameRef: same })).toEqual({ outcome: 'STALE' });
       expect(rejected(decideInvoiceCommand(writeOff('0.03', 'BANK_CHARGES'), PROGRAM, paidOff, { sameRef: same }))).toMatchObject({
         reason: 'EXTERNAL_REF_CONFLICT',
@@ -396,7 +402,15 @@ describe('decideInvoiceCommand', () => {
     });
 
     it('treats the same cancellation resent as stale', () => {
-      const same = stored({ reason: 'CANCELLATION', externalRef: 'C-1', originalAmount: d('1000.00'), paymentId: null, paymentAmount: null, paymentCurrency: null, cancellationReason: 'SUPPLIER_WITHDREW' });
+      const same = stored({
+        reason: 'CANCELLATION',
+        externalRef: 'C-1',
+        originalAmount: d('1000.00'),
+        paymentId: null,
+        paymentAmount: null,
+        paymentCurrency: null,
+        cancellationReason: 'SUPPLIER_WITHDREW',
+      });
       expect(decideInvoiceCommand(cancellation(), PROGRAM, cancelledReservation, { sameRef: same })).toEqual({ outcome: 'STALE' });
     });
   });
@@ -421,7 +435,15 @@ describe('decideInvoiceCommand', () => {
     });
 
     it('brings a cancelled reservation back to ACTIVE', () => {
-      const target = stored({ id: 'rel-c', reason: 'CANCELLATION', externalRef: 'C-1', originalAmount: d('1000.00'), paymentId: null, paymentAmount: null, paymentCurrency: null });
+      const target = stored({
+        id: 'rel-c',
+        reason: 'CANCELLATION',
+        externalRef: 'C-1',
+        originalAmount: d('1000.00'),
+        paymentId: null,
+        paymentAmount: null,
+        paymentCurrency: null,
+      });
       const plan = decideInvoiceCommand(reversal('C-1'), PROGRAM, cancelledReservation, { target });
       expect(released(plan)).toMatchObject({ status: 'ACTIVE', reservedDelta: '900.0000' });
     });

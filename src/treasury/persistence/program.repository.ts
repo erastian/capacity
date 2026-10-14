@@ -32,10 +32,7 @@ function toProgram(row: ProgramRow): ProgramView {
 @Injectable()
 export class ProgramStateRepository {
   async lockProgram(tx: Tx, externalId: string): Promise<ProgramView | undefined> {
-    const rows = await tx.$queryRawUnsafe<ProgramRow[]>(
-      `SELECT ${PROGRAM_COLUMNS} FROM program WHERE external_id = $1 FOR UPDATE`,
-      externalId,
-    );
+    const rows = await tx.$queryRawUnsafe<ProgramRow[]>(`SELECT ${PROGRAM_COLUMNS} FROM program WHERE external_id = $1 FOR UPDATE`, externalId);
     return rows[0] && toProgram(rows[0]);
   }
 
@@ -119,12 +116,7 @@ export class ProgramStateRepository {
     const utilizedDelta = after.externalUtilized.minus(before.externalUtilized);
     if (creditDelta.isZero() && utilizedDelta.isZero()) return false;
 
-    const type =
-      kind === 'TREASURY_SNAPSHOT'
-        ? 'TREASURY_SNAPSHOT'
-        : creditDelta.isZero()
-          ? 'TREASURY_EXTERNAL_UTILIZATION_UPDATED'
-          : 'TREASURY_LIMIT_UPDATED';
+    const type = kind === 'TREASURY_SNAPSHOT' ? 'TREASURY_SNAPSHOT' : creditDelta.isZero() ? 'TREASURY_EXTERNAL_UTILIZATION_UPDATED' : 'TREASURY_LIMIT_UPDATED';
 
     await tx.$executeRaw`
       INSERT INTO capacity_ledger (

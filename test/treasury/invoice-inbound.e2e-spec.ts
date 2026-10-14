@@ -10,13 +10,12 @@ import { programMessage, quoteMessage } from '../support/treasury-messages.js';
 
 const INVOICE_CURRENCY = 'THB';
 
-const ORIGINATION ={ sub: 'svc-origination', azp: 'origination', scope: 'reservations:write programs:read:all' };
+const ORIGINATION = { sub: 'svc-origination', azp: 'origination', scope: 'reservations:write programs:read:all' };
 
 const message = (type: string, programId: string, payload: Record<string, unknown>, messageId?: string) =>
   programMessage({ type, programId, payload, messageId });
 
-const conversionQuote = (rateId: string, rate = '4.6512') =>
-  quoteMessage({ rateId, from: 'RON', to: INVOICE_CURRENCY, rateType: 'CONVERSION', rate });
+const conversionQuote = (rateId: string, rate = '4.6512') => quoteMessage({ rateId, from: 'RON', to: INVOICE_CURRENCY, rateType: 'CONVERSION', rate });
 
 const owed = (amount: string) => ({ amount, currency: INVOICE_CURRENCY });
 
@@ -26,9 +25,7 @@ describe('treasury invoice messages', () => {
   let bearer: string;
 
   beforeAll(async () => {
-    app = await startApp(undefined, (builder) =>
-      builder.overrideProvider(EventPublisher).useValue(new CapturingPublisher()),
-    );
+    app = await startApp(undefined, (builder) => builder.overrideProvider(EventPublisher).useValue(new CapturingPublisher()));
     processor = app.get(InboundProcessor);
     bearer = await token({ claims: ORIGINATION });
     await seedRate({ from: INVOICE_CURRENCY, to: 'EUR', rate: '0.0397' });
@@ -61,8 +58,7 @@ describe('treasury invoice messages', () => {
     return raw.messageId!;
   };
 
-  const funded = (invoice: Invoice, fundingRef: string) =>
-    send(message('INVOICE_FUNDED', invoice.programId, { invoiceId: invoice.invoiceId, fundingRef }));
+  const funded = (invoice: Invoice, fundingRef: string) => send(message('INVOICE_FUNDED', invoice.programId, { invoiceId: invoice.invoiceId, fundingRef }));
 
   const returned = (invoice: Invoice, fundingRef: string) =>
     send(message('INVOICE_FUNDING_RETURNED', invoice.programId, { invoiceId: invoice.invoiceId, fundingRef }));
@@ -119,8 +115,7 @@ describe('treasury invoice messages', () => {
     );
 
   const inbox = async (messageId: string) =>
-    (await db().query('SELECT outcome::text AS outcome, reason FROM processed_message WHERE message_id = $1', [messageId]))
-      .rows[0];
+    (await db().query('SELECT outcome::text AS outcome, reason FROM processed_message WHERE message_id = $1', [messageId])).rows[0];
 
   const reservation = async (id: string) =>
     (
@@ -135,19 +130,14 @@ describe('treasury invoice messages', () => {
     (await db().query('SELECT id, reserved, open_blocking_breaks FROM program WHERE external_id = $1', [externalId])).rows[0];
 
   const parked = async (messageId: string) =>
-    (
-      await db().query(
-        'SELECT awaiting_kind::text AS awaiting_kind, awaiting_ref, resolved_at FROM parked_message WHERE message_id = $1',
-        [messageId],
-      )
-    ).rows[0];
+    (await db().query('SELECT awaiting_kind::text AS awaiting_kind, awaiting_ref, resolved_at FROM parked_message WHERE message_id = $1', [messageId])).rows[0];
 
   const events = async (programId: string, type: string) =>
     (
-      await db().query(
-        `SELECT payload -> 'data' AS data FROM outbox_event WHERE partition_key = $1 AND type = $2::"OutboundEventType" ORDER BY id`,
-        [programId, type],
-      )
+      await db().query(`SELECT payload -> 'data' AS data FROM outbox_event WHERE partition_key = $1 AND type = $2::"OutboundEventType" ORDER BY id`, [
+        programId,
+        type,
+      ])
     ).rows.map((row) => row.data);
 
   const breaks = async (programId: string) =>

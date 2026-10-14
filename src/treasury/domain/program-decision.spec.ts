@@ -53,9 +53,10 @@ describe('creating snapshot', () => {
   });
 
   it('rejects inconsistent currencies without creating anything', () => {
-    expect(
-      decideProgramCommand(snapshot({ creditLimit: money('1000', 5n, 'USD') }), undefined),
-    ).toMatchObject({ outcome: 'REJECTED', reason: 'CURRENCY_MISMATCH' });
+    expect(decideProgramCommand(snapshot({ creditLimit: money('1000', 5n, 'USD') }), undefined)).toMatchObject({
+      outcome: 'REJECTED',
+      reason: 'CURRENCY_MISMATCH',
+    });
   });
 });
 
@@ -65,10 +66,7 @@ describe('snapshot of an existing program', () => {
   });
 
   it('applies only the newer fields', () => {
-    const plan = decideProgramCommand(
-      snapshot({ creditLimit: money('800', 6n), externalUtilized: money('999', 2n) }),
-      program(),
-    );
+    const plan = decideProgramCommand(snapshot({ creditLimit: money('800', 6n), externalUtilized: money('999', 2n) }), program());
     expect(plan).toMatchObject({ outcome: 'APPLIED', ledger: 'TREASURY_SNAPSHOT' });
     if (plan.outcome !== 'APPLIED' || !('changes' in plan)) throw new Error('expected changes');
     expect(Object.keys(plan.changes)).toEqual(['creditLimit']);
@@ -81,9 +79,11 @@ describe('snapshot of an existing program', () => {
     ['same version, other limit', { creditLimit: money('900', 5n) }, {}, 'VERSION_CONFLICT', true],
     ['reopening a closed programme', { status: { value: 'ACTIVE', reason: null, version: 9n } }, { status: 'CLOSED' }, 'INVALID_STATUS_TRANSITION', false],
   ])('rejects the whole snapshot on %s', (_, patch, programPatch, reason, blocking) => {
-    expect(
-      decideProgramCommand(snapshot({ ...patch, creditLimit: patch.creditLimit ?? money('1', 99n) }), program(programPatch)),
-    ).toMatchObject({ outcome: 'REJECTED', reason, break: { blocking } });
+    expect(decideProgramCommand(snapshot({ ...patch, creditLimit: patch.creditLimit ?? money('1', 99n) }), program(programPatch))).toMatchObject({
+      outcome: 'REJECTED',
+      reason,
+      break: { blocking },
+    });
   });
 });
 
@@ -108,10 +108,7 @@ describe('single field messages', () => {
 
   it('suspends an active programme', () => {
     expect(
-      decideProgramCommand(
-        { type: 'PROGRAM_STATUS_CHANGED', programId: 'P1', status: { value: 'SUSPENDED', reason: 'review', version: 3n } },
-        program(),
-      ),
+      decideProgramCommand({ type: 'PROGRAM_STATUS_CHANGED', programId: 'P1', status: { value: 'SUSPENDED', reason: 'review', version: 3n } }, program()),
     ).toMatchObject({ outcome: 'APPLIED', changes: { status: { value: 'SUSPENDED' } }, ledger: null });
   });
 });

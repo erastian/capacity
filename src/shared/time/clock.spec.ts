@@ -8,9 +8,7 @@ describe('businessDate', () => {
   });
 
   it('handles winter time in London', () => {
-    expect(businessDate(new Date('2026-12-31T23:30:00Z'), 'Europe/London')).toBe(
-      '2026-12-31',
-    );
+    expect(businessDate(new Date('2026-12-31T23:30:00Z'), 'Europe/London')).toBe('2026-12-31');
   });
 
   it('validates time zones', () => {

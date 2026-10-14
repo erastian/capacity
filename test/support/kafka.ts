@@ -48,9 +48,7 @@ export async function startKafka(): Promise<StartedKafka> {
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: '1',
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: '0',
     })
-    .withCopyDirectoriesToContainer([
-      { source: resolve('docker/kafka'), target: '/etc/capacity-kafka' },
-    ])
+    .withCopyDirectoriesToContainer([{ source: resolve('docker/kafka'), target: '/etc/capacity-kafka' }])
     .withWaitStrategy(Wait.forLogMessage(/Kafka Server started/))
     .withStartupTimeout(120_000)
     .start();

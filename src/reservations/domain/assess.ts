@@ -1,13 +1,6 @@
 import { capacityOf } from '../../shared/money/capacity.js';
 import { exposure } from '../../shared/money/money.js';
-import type {
-  AssessContext,
-  Assessment,
-  DeclineCode,
-  FxQuote,
-  ProgramState,
-  ReserveInput,
-} from './assess.types.js';
+import type { AssessContext, Assessment, DeclineCode, FxQuote, ProgramState, ReserveInput } from './assess.types.js';
 
 export const DECLINE_STATUS: Record<DeclineCode, 409 | 422> = {
   INVOICE_PAST_DUE: 422,
@@ -24,10 +17,7 @@ export function needsFx(program: ProgramState, input: ReserveInput): boolean {
   return input.currency !== program.currency;
 }
 
-function assessFx(
-  fx: FxQuote | undefined,
-  context: AssessContext,
-): DeclineCode | undefined {
+function assessFx(fx: FxQuote | undefined, context: AssessContext): DeclineCode | undefined {
   if (!fx) return 'FX_RATE_UNAVAILABLE';
   if (fx.status === 'SUSPENDED' || !fx.rate) return 'FX_RATE_SUSPENDED';
   if (context.now.getTime() - fx.effectiveAsOf.getTime() > context.fxMaxAgeMs) {
@@ -36,12 +26,7 @@ function assessFx(
   return undefined;
 }
 
-export function assess(
-  program: ProgramState,
-  input: ReserveInput,
-  fx: FxQuote | undefined,
-  context: AssessContext,
-): Assessment {
+export function assess(program: ProgramState, input: ReserveInput, fx: FxQuote | undefined, context: AssessContext): Assessment {
   if (input.dueDate < context.businessDate) {
     return { outcome: 'decline', code: 'INVOICE_PAST_DUE' };
   }

@@ -1,7 +1,4 @@
-import {
-  PostgreSqlContainer,
-  type StartedPostgreSqlContainer,
-} from '@testcontainers/postgresql';
+import { PostgreSqlContainer, type StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import { execFileSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
@@ -32,8 +29,7 @@ export async function setup(project: TestProject): Promise<void> {
     .withCommand(['postgres', '-c', 'max_connections=300'])
     .start();
 
-  const url = (user: string) =>
-    `postgresql://${user}:${user}@${container!.getHost()}:${container!.getPort()}/capacity`;
+  const url = (user: string) => `postgresql://${user}:${user}@${container!.getHost()}:${container!.getPort()}/capacity`;
 
   const databaseUrls = {
     app: url('capacity_app'),

@@ -45,10 +45,7 @@ export const CURSOR_PART = {
   integer: (value: string) => /^\d{1,19}$/.test(value) && BigInt(value) <= MAX_BIGINT,
 } as const;
 
-export function decodeCursor(
-  cursor: string | undefined,
-  parts: readonly ((value: string) => boolean)[],
-): string[] | undefined {
+export function decodeCursor(cursor: string | undefined, parts: readonly ((value: string) => boolean)[]): string[] | undefined {
   if (cursor === undefined) return undefined;
   let key: unknown;
   try {
@@ -56,20 +53,12 @@ export function decodeCursor(
   } catch {
     throw invalidCursor();
   }
-  const valid =
-    Array.isArray(key) &&
-    key.length === parts.length &&
-    key.every((part, index) => typeof part === 'string' && parts[index]!(part));
+  const valid = Array.isArray(key) && key.length === parts.length && key.every((part, index) => typeof part === 'string' && parts[index]!(part));
   if (!valid) throw invalidCursor();
   return key as string[];
 }
 
-export function toPage<Row, Item>(
-  rows: Row[],
-  limit: number,
-  keyOf: (row: Row) => string[],
-  view: (row: Row) => Item,
-): Page<Item> {
+export function toPage<Row, Item>(rows: Row[], limit: number, keyOf: (row: Row) => string[], view: (row: Row) => Item): Page<Item> {
   const visible = rows.slice(0, limit);
   const last = visible[visible.length - 1];
   return {

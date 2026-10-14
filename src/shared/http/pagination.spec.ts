@@ -38,7 +38,21 @@ describe('toPage', () => {
   const rows = [1, 2, 3];
 
   it('returns a cursor only when a row beyond the limit exists', () => {
-    expect(toPage(rows, 2, (row) => [String(row)], (row) => row)).toEqual({ items: [1, 2], nextCursor: encodeCursor(['2']) });
-    expect(toPage(rows, 3, (row) => [String(row)], (row) => row)).toEqual({ items: [1, 2, 3], nextCursor: null });
+    expect(
+      toPage(
+        rows,
+        2,
+        (row) => [String(row)],
+        (row) => row,
+      ),
+    ).toEqual({ items: [1, 2], nextCursor: encodeCursor(['2']) });
+    expect(
+      toPage(
+        rows,
+        3,
+        (row) => [String(row)],
+        (row) => row,
+      ),
+    ).toEqual({ items: [1, 2, 3], nextCursor: null });
   });
 });

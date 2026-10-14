@@ -10,8 +10,7 @@ import { closeDb, db, ownerDb, seedProgram, unique } from '../support/db.js';
 import { token } from '../support/issuer.js';
 import { programMessage } from '../support/treasury-messages.js';
 
-const treasury = (type: string, programId: string, payload: Record<string, unknown>) =>
-  programMessage({ type, programId, payload });
+const treasury = (type: string, programId: string, payload: Record<string, unknown>) => programMessage({ type, programId, payload });
 
 const snapshot = (limit = '1000') => ({
   currency: 'EUR',
@@ -30,9 +29,7 @@ describe('operational jobs', () => {
   let origination: string;
 
   beforeAll(async () => {
-    app = await startApp(undefined, (builder) =>
-      builder.overrideProvider(EventPublisher).useValue(new CapturingPublisher()),
-    );
+    app = await startApp(undefined, (builder) => builder.overrideProvider(EventPublisher).useValue(new CapturingPublisher()));
     processor = app.get(InboundProcessor);
     monitors = app.get(OperationalMonitors);
     reconciliation = app.get(InternalReconciliation);
@@ -45,8 +42,7 @@ describe('operational jobs', () => {
     await closeDb();
   });
 
-  const send = (type: string, programId: string, payload: Record<string, unknown>) =>
-    processor.process(treasury(type, programId, payload));
+  const send = (type: string, programId: string, payload: Record<string, unknown>) => processor.process(treasury(type, programId, payload));
 
   async function program() {
     const programId = unique('P');
@@ -98,9 +94,7 @@ describe('operational jobs', () => {
       expect((await monitors.check()).agedParked.map((item) => item.messageId)).not.toContain(messageId);
 
       await ownerDb().query(`UPDATE parked_message SET parked_at = now() - interval '1 hour' WHERE message_id = $1`, [messageId]);
-      expect((await monitors.check()).agedParked).toEqual(
-        expect.arrayContaining([expect.objectContaining({ messageId, programId, awaitingKind: 'FX_RATE' })]),
-      );
+      expect((await monitors.check()).agedParked).toEqual(expect.arrayContaining([expect.objectContaining({ messageId, programId, awaitingKind: 'FX_RATE' })]));
     });
 
     it('reports programmes treasury has not confirmed for too long', async () => {
@@ -115,8 +109,7 @@ describe('operational jobs', () => {
   });
 
   describe('internal reconciliation', () => {
-    const subjects = async (check: string) =>
-      (await reconciliation.run()).mismatches.filter((item) => item.check === check).map((item) => item.subject);
+    const subjects = async (check: string) => (await reconciliation.run()).mismatches.filter((item) => item.check === check).map((item) => item.subject);
 
     it('finds nothing wrong with a consistent programme', async () => {
       const programId = await program();
@@ -135,10 +128,7 @@ describe('operational jobs', () => {
     it('catches totals edited behind the application', async () => {
       const programId = await program();
       await reserve(programId);
-      await ownerDb().query(
-        `UPDATE program SET reserved = reserved + 1, open_blocking_breaks = 2 WHERE external_id = $1`,
-        [programId],
-      );
+      await ownerDb().query(`UPDATE program SET reserved = reserved + 1, open_blocking_breaks = 2 WHERE external_id = $1`, [programId]);
 
       const report = await reconciliation.run();
       const mine = report.mismatches.filter((item) => item.subject === programId);
@@ -197,10 +187,7 @@ describe('operational jobs', () => {
       const programId = await seedProgram();
       const key = unique('key');
       const { id } = await reserve(programId, key);
-      await db().query(
-        `UPDATE outbox_event SET published_at = now() - interval '2 days' WHERE payload -> 'data' ->> 'reservationId' = $1`,
-        [id],
-      );
+      await db().query(`UPDATE outbox_event SET published_at = now() - interval '2 days' WHERE payload -> 'data' ->> 'reservationId' = $1`, [id]);
       await ownerDb().query(
         `UPDATE idempotency_record SET created_at = now() - interval '8 days', expires_at = now() - interval '1 minute'
          WHERE key = $1`,
@@ -210,9 +197,7 @@ describe('operational jobs', () => {
       const result = await cleanup.run();
       expect(result.outboxEvents).toBeGreaterThanOrEqual(1);
       expect(result.idempotencyRecords).toBeGreaterThanOrEqual(1);
-      expect(
-        (await db().query(`SELECT 1 FROM outbox_event WHERE payload -> 'data' ->> 'reservationId' = $1`, [id])).rowCount,
-      ).toBe(0);
+      expect((await db().query(`SELECT 1 FROM outbox_event WHERE payload -> 'data' ->> 'reservationId' = $1`, [id])).rowCount).toBe(0);
       expect((await db().query('SELECT 1 FROM idempotency_record WHERE key = $1', [key])).rowCount).toBe(0);
     });
   });

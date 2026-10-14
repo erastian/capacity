@@ -10,11 +10,9 @@ import { programMessage, quoteMessage } from '../support/treasury-messages.js';
 const INVOICE = 'SGD';
 const PAYMENT = 'MYR';
 
-const treasury = (type: string, programId: string, payload: Record<string, unknown>) =>
-  programMessage({ type, programId, payload });
+const treasury = (type: string, programId: string, payload: Record<string, unknown>) => programMessage({ type, programId, payload });
 
-const conversionQuote = (rateId: string, rate: string) =>
-  quoteMessage({ rateId, from: PAYMENT, to: INVOICE, rateType: 'CONVERSION', rate });
+const conversionQuote = (rateId: string, rate: string) => quoteMessage({ rateId, from: PAYMENT, to: INVOICE, rateType: 'CONVERSION', rate });
 
 describe('read API', () => {
   let app: NestFastifyApplication;
@@ -27,9 +25,7 @@ describe('read API', () => {
   let conversionRateId: string;
 
   beforeAll(async () => {
-    app = await startApp(undefined, (builder) =>
-      builder.overrideProvider(EventPublisher).useValue(new CapturingPublisher()),
-    );
+    app = await startApp(undefined, (builder) => builder.overrideProvider(EventPublisher).useValue(new CapturingPublisher()));
     processor = app.get(InboundProcessor);
     bearer.origination = await token({ claims: { sub: 'svc-origination', scope: 'reservations:write programs:read:all' } });
     bearer.otherWriter = await token({ claims: { sub: 'svc-other-channel', scope: 'reservations:write programs:read:all' } });
@@ -49,8 +45,7 @@ describe('read API', () => {
     await closeDb();
   });
 
-  const get = (who: keyof typeof bearer, url: string) =>
-    app.inject({ method: 'GET', url, headers: { authorization: `Bearer ${bearer[who]}` } });
+  const get = (who: keyof typeof bearer, url: string) => app.inject({ method: 'GET', url, headers: { authorization: `Bearer ${bearer[who]}` } });
 
   const reserve = async (programId: string, amount = '1000.00', who: keyof typeof bearer = 'origination') => {
     const invoiceId = unique('INV');
@@ -63,8 +58,7 @@ describe('read API', () => {
     return { res, invoiceId, id: res.statusCode === 201 ? (res.json().id as string) : undefined };
   };
 
-  const send = (type: string, programId: string, payload: Record<string, unknown>) =>
-    processor.process(treasury(type, programId, payload));
+  const send = (type: string, programId: string, payload: Record<string, unknown>) => processor.process(treasury(type, programId, payload));
 
   describe('programmes', () => {
     it('shows a buyer only its own programmes', async () => {

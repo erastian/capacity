@@ -24,10 +24,7 @@ function toQuote(row: FxRateRow): StoredQuote {
 @Injectable()
 export class QuoteRepository {
   async findQuoteByRateId(tx: Tx, rateId: string): Promise<StoredQuote | undefined> {
-    const rows = await tx.$queryRawUnsafe<FxRateRow[]>(
-      `SELECT ${FX_COLUMNS} FROM fx_rate WHERE external_id = $1`,
-      rateId,
-    );
+    const rows = await tx.$queryRawUnsafe<FxRateRow[]>(`SELECT ${FX_COLUMNS} FROM fx_rate WHERE external_id = $1`, rateId);
     return rows[0] && toQuote(rows[0]);
   }
 

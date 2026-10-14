@@ -26,13 +26,7 @@ import { closureCondition, versionAbove } from './domain/break-closure.js';
 import type { BreakView } from './domain/break-closure.types.js';
 import { decideFxRate } from './domain/fx-rate-decision.js';
 import { decideInvoiceCommand } from './domain/invoice-decision.js';
-import type {
-  InvoiceBreak,
-  InvoiceEffect,
-  InvoiceFacts,
-  ReleaseReason,
-  ReservationView,
-} from './domain/invoice-decision.types.js';
+import type { InvoiceBreak, InvoiceEffect, InvoiceFacts, ReleaseReason, ReservationView } from './domain/invoice-decision.types.js';
 import { decideProgramCommand } from './domain/program-decision.js';
 import type { BreakSpec, ProgramPlan, ProgramView } from './domain/program-decision.types.js';
 import { InboundMetrics } from './inbound.metrics.js';
@@ -59,18 +53,12 @@ const balancesOf = (program: ProgramView): CapacityBalances => ({
   reserved: program.reserved,
 });
 
-const effectiveAsOf = ({ envelope, coordinates }: Context): Date =>
-  envelope.asOf < coordinates.timestamp ? envelope.asOf : coordinates.timestamp;
+const effectiveAsOf = ({ envelope, coordinates }: Context): Date => (envelope.asOf < coordinates.timestamp ? envelope.asOf : coordinates.timestamp);
 
 const snapshotBatch = (type: string, batchId: string | undefined): Pick<Decision, 'batch'> =>
   type === 'PROGRAM_SNAPSHOT' && batchId ? { batch: batchId } : {};
 
-const DEAD_LETTER_REASONS = new Set([
-  'INVALID_FORMAT',
-  'UNKNOWN_MESSAGE_TYPE',
-  'UNSUPPORTED_SCHEMA_VERSION',
-  'PROCESSING_FAILED',
-]);
+const DEAD_LETTER_REASONS = new Set(['INVALID_FORMAT', 'UNKNOWN_MESSAGE_TYPE', 'UNSUPPORTED_SCHEMA_VERSION', 'PROCESSING_FAILED']);
 
 const RELEASE_EVENTS: Record<ReleaseReason, OutboundEventType> = {
   REPAYMENT: 'RESERVATION_RELEASED',
@@ -231,10 +219,7 @@ export class InboundProcessor {
       });
       await this.inbox.markResolved(tx, parked.messageId);
     });
-    await this.deadLetterPoison(
-      { ...parked.coordinates, key: programExternalId, value: serializeEnvelope(parked.envelope) },
-      error,
-    );
+    await this.deadLetterPoison({ ...parked.coordinates, key: programExternalId, value: serializeEnvelope(parked.envelope) }, error);
   }
 
   private async recordPoison(tx: Tx, context: Context): Promise<void> {
@@ -293,8 +278,7 @@ export class InboundProcessor {
     if (command.type === 'RECONCILIATION_BATCH_COMPLETED') return this.applyBatch(tx, context, command);
 
     const creating = !program && command.type === 'PROGRAM_SNAPSHOT';
-    const reservation =
-      program && isInvoiceCommand(command) ? await this.settlements.findReservation(tx, command.invoiceId) : undefined;
+    const reservation = program && isInvoiceCommand(command) ? await this.settlements.findReservation(tx, command.invoiceId) : undefined;
     const queue = reservation && reservation.programId === program?.id ? reservation.id : null;
     if (!context.fromParked && !creating) {
       const predecessor = await this.inbox.lastUnresolvedParked(tx, command.programId, queue);
@@ -323,10 +307,7 @@ export class InboundProcessor {
       programExternalId: null,
     });
     if (outcome === 'REJECTED') {
-      this.metrics.warning(
-        'BATCH_CONFLICT',
-        `batch ${command.batchId} announced ${command.programCount} programs, earlier ${existing!.programCount}`,
-      );
+      this.metrics.warning('BATCH_CONFLICT', `batch ${command.batchId} announced ${command.programCount} programs, earlier ${existing!.programCount}`);
       await this.status(tx, context, undefined, 'RJCT', { reason });
       return {};
     }
@@ -338,21 +319,10 @@ export class InboundProcessor {
     return { batch: command.batchId };
   }
 
-  private async applyBreakResolution(
-    tx: Tx,
-    context: Context,
-    command: BreakResolved,
-    program: ProgramView,
-  ): Promise<Decision> {
+  private async applyBreakResolution(tx: Tx, context: Context, command: BreakResolved, program: ProgramView): Promise<Decision> {
     const { envelope, coordinates } = context;
     const found = await this.breaks.findBreak(tx, command.breakId, program);
-    const reason = !found
-      ? 'UNKNOWN_BREAK'
-      : found.resolvedAt
-        ? null
-        : (await this.closable(tx, found, program))
-          ? null
-          : 'BREAK_NOT_RESOLVED';
+    const reason = !found ? 'UNKNOWN_BREAK' : found.resolvedAt ? null : (await this.closable(tx, found, program)) ? null : 'BREAK_NOT_RESOLVED';
     const outcome = reason ? 'REJECTED' : found!.resolvedAt ? 'STALE' : 'APPLIED';
     this.metrics.decided(command.type, outcome);
 
@@ -374,12 +344,7 @@ export class InboundProcessor {
     return {};
   }
 
-  private async resolveListedBreaks(
-    tx: Tx,
-    snapshot: ProgramSnapshot,
-    program: ProgramView,
-    messageId: string,
-  ): Promise<void> {
+  private async resolveListedBreaks(tx: Tx, snapshot: ProgramSnapshot, program: ProgramView, messageId: string): Promise<void> {
     for (const breakId of snapshot.resolvedBreaks) {
       const found = await this.breaks.findBreak(tx, breakId, program);
       const result = !found
@@ -436,13 +401,7 @@ export class InboundProcessor {
     });
   }
 
-  private async applyInvoice(
-    tx: Tx,
-    context: Context,
-    command: InvoiceCommand,
-    program: ProgramView,
-    found: ReservationView | undefined,
-  ): Promise<Decision> {
+  private async applyInvoice(tx: Tx, context: Context, command: InvoiceCommand, program: ProgramView, found: ReservationView | undefined): Promise<Decision> {
     const { envelope, coordinates } = context;
     const own = found && found.programId === program.id ? await this.settlements.lockReservation(tx, found.id) : undefined;
     const reservation = own ?? found;
@@ -467,10 +426,7 @@ export class InboundProcessor {
     if (plan.outcome === 'REJECTED') {
       await inbox('REJECTED', plan.reason);
       if (plan.break) {
-        const target =
-          plan.break.reason === 'PROGRAM_MISMATCH'
-            ? await this.programs.lockProgram(tx, reservation!.programExternalId)
-            : program;
+        const target = plan.break.reason === 'PROGRAM_MISMATCH' ? await this.programs.lockProgram(tx, reservation!.programExternalId) : program;
         references.breakId = await this.openBreak(tx, plan.break, target!, target!.externalId, envelope.messageId);
       }
       await this.status(tx, context, program, 'RJCT', { reason: plan.reason, references });
@@ -528,15 +484,7 @@ export class InboundProcessor {
     const releaseId = await this.settlements.insertRelease(tx, reservation.id, row, envelope.messageId);
     await this.settlements.rebalanceReservation(tx, reservation, balances);
     const after = await this.programs.addReserved(tx, program.id, reservedDelta);
-    await this.settlements.insertReleaseLedger(
-      tx,
-      after,
-      reservation.id,
-      releaseId,
-      row.reason === 'REVERSAL',
-      reservedDelta,
-      envelope.messageId,
-    );
+    await this.settlements.insertReleaseLedger(tx, after, reservation.id, releaseId, row.reason === 'REVERSAL', reservedDelta, envelope.messageId);
 
     const invoiceScale = minorUnits(reservation.originalCurrency);
     await writeOutbox(tx, {
@@ -600,11 +548,7 @@ export class InboundProcessor {
   }
 
   private async applyRate(tx: Tx, context: Context, quote: FxRatePublished): Promise<Decision> {
-    const plan = decideFxRate(
-      quote,
-      await this.quotes.findQuoteByRateId(tx, quote.rateId),
-      await this.quotes.findQuoteByPairVersion(tx, quote),
-    );
+    const plan = decideFxRate(quote, await this.quotes.findQuoteByRateId(tx, quote.rateId), await this.quotes.findQuoteByPairVersion(tx, quote));
     this.metrics.decided(quote.type, plan.outcome);
 
     await this.inbox.insertInbox(tx, context.envelope, context.coordinates, {
@@ -688,13 +632,7 @@ export class InboundProcessor {
     return { wake: command.programId, parked: true };
   }
 
-  private async apply(
-    tx: Tx,
-    context: Context,
-    command: ProgramCommand,
-    program: ProgramView | undefined,
-    plan: ProgramPlan,
-  ): Promise<Decision> {
+  private async apply(tx: Tx, context: Context, command: ProgramCommand, program: ProgramView | undefined, plan: ProgramPlan): Promise<Decision> {
     const { envelope, coordinates } = context;
     const asOf = effectiveAsOf(context);
     this.metrics.decided(command.type, plan.outcome);
@@ -725,20 +663,11 @@ export class InboundProcessor {
 
     const before = program ? balancesOf(program) : undefined;
     const after =
-      'create' in plan
-        ? await this.programs.createProgram(tx, plan.create, asOf)
-        : await this.programs.updateProgram(tx, program!, plan.changes, asOf);
+      'create' in plan ? await this.programs.createProgram(tx, plan.create, asOf) : await this.programs.updateProgram(tx, program!, plan.changes, asOf);
 
     await inbox('APPLIED', after.id);
     if (plan.ledger) {
-      await this.programs.insertTreasuryLedger(
-        tx,
-        after.id,
-        plan.ledger,
-        before ?? ZERO_BALANCES(after),
-        balancesOf(after),
-        envelope.messageId,
-      );
+      await this.programs.insertTreasuryLedger(tx, after.id, plan.ledger, before ?? ZERO_BALANCES(after), balancesOf(after), envelope.messageId);
     }
     await this.limitExcess(tx, after, before, envelope.messageId);
     if (command.type === 'PROGRAM_SNAPSHOT') await this.resolveListedBreaks(tx, command, after, envelope.messageId);
@@ -746,12 +675,7 @@ export class InboundProcessor {
     return 'create' in plan ? { wake: command.programId } : {};
   }
 
-  private async limitExcess(
-    tx: Tx,
-    program: ProgramView,
-    before: CapacityBalances | undefined,
-    messageId: string,
-  ): Promise<void> {
+  private async limitExcess(tx: Tx, program: ProgramView, before: CapacityBalances | undefined, messageId: string): Promise<void> {
     const was = capacityOf(before ?? ZERO_BALANCES(program)).overLimit;
     const now = capacityOf(program).overLimit;
     const started = was.isZero() && !now.isZero();

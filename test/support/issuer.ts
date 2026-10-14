@@ -38,11 +38,7 @@ function base64url(value: object): string {
 
 export function unsignedToken(claims: Record<string, unknown> = {}): string {
   const now = Math.floor(Date.now() / 1000);
-  return [
-    base64url({ alg: 'none', typ: 'JWT' }),
-    base64url({ sub: 'subject-1', iss: ISSUER, aud: AUDIENCE, exp: now + 300, ...claims }),
-    '',
-  ].join('.');
+  return [base64url({ alg: 'none', typ: 'JWT' }), base64url({ sub: 'subject-1', iss: ISSUER, aud: AUDIENCE, exp: now + 300, ...claims }), ''].join('.');
 }
 
 export async function hmacToken(secret: string): Promise<string> {

@@ -9,9 +9,7 @@ export async function startApp(
   override: (builder: TestingModuleBuilder) => TestingModuleBuilder = (builder) => builder,
 ): Promise<NestFastifyApplication> {
   const moduleRef = await override(Test.createTestingModule({ imports: [module] })).compile();
-  const app = configureApp(
-    moduleRef.createNestApplication<NestFastifyApplication>(createAdapter(), { bufferLogs: true }),
-  );
+  const app = configureApp(moduleRef.createNestApplication<NestFastifyApplication>(createAdapter(), { bufferLogs: true }));
   await app.init();
   await app.getHttpAdapter().getInstance().ready();
   return app;

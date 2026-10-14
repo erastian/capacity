@@ -21,22 +21,15 @@ describe('currencies', () => {
 });
 
 describe('amount and rate text', () => {
-  it.each(['0', '1', '100.5', '125000.00', '1.0001'])('accepts the amount %s', (text) =>
-    expect(AMOUNT_TEXT.test(text)).toBe(true),
+  it.each(['0', '1', '100.5', '125000.00', '1.0001'])('accepts the amount %s', (text) => expect(AMOUNT_TEXT.test(text)).toBe(true));
+
+  it.each(['', '-1', '+1', '01', '1.', '.5', '1e3', '1,5', ' 1', '12345678901234567', '1.00001'])('rejects the amount %s', (text) =>
+    expect(AMOUNT_TEXT.test(text)).toBe(false),
   );
 
-  it.each(['', '-1', '+1', '01', '1.', '.5', '1e3', '1,5', ' 1', '12345678901234567', '1.00001'])(
-    'rejects the amount %s',
-    (text) => expect(AMOUNT_TEXT.test(text)).toBe(false),
-  );
+  it.each(['0.000012103412345678', '12345678901234567890'])('accepts the rate %s', (text) => expect(RATE_TEXT.test(text)).toBe(true));
 
-  it.each(['0.000012103412345678', '12345678901234567890'])('accepts the rate %s', (text) =>
-    expect(RATE_TEXT.test(text)).toBe(true),
-  );
-
-  it.each(['0.0000121034123456789', '123456789012345678901', '-1'])('rejects the rate %s', (text) =>
-    expect(RATE_TEXT.test(text)).toBe(false),
-  );
+  it.each(['0.0000121034123456789', '123456789012345678901', '-1'])('rejects the rate %s', (text) => expect(RATE_TEXT.test(text)).toBe(false));
 
   it.each([
     ['100', 'JPY', true],
@@ -55,21 +48,15 @@ describe('exposure', () => {
   });
 
   it('rounds up to four places in favour of risk', () => {
-    expect(exposure(new Decimal('100.01'), new Decimal('0.333333')).toFixed(4)).toBe(
-      '33.3367',
-    );
+    expect(exposure(new Decimal('100.01'), new Decimal('0.333333')).toFixed(4)).toBe('33.3367');
   });
 
   it('is never zero while debt remains', () => {
-    expect(
-      exposure(new Decimal('1'), new Decimal('0.000012103412345678')).toFixed(4),
-    ).toBe('0.0001');
+    expect(exposure(new Decimal('1'), new Decimal('0.000012103412345678')).toFixed(4)).toBe('0.0001');
   });
 
   it('rounds the exact product, not a 20-digit approximation of it', () => {
-    expect(
-      exposure(new Decimal('1000000000000000.0001'), new Decimal('1.000000000000000001')).toFixed(4),
-    ).toBe('1000000000000000.0012');
+    expect(exposure(new Decimal('1000000000000000.0001'), new Decimal('1.000000000000000001')).toFixed(4)).toBe('1000000000000000.0012');
   });
 
   it('never writes a decimal in exponent notation', () => {

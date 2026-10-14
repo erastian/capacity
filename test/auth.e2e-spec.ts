@@ -49,10 +49,7 @@ describe('authentication', () => {
   });
 
   it('lets a valid token with the scope through and exposes the principal', async () => {
-    const res = await get(
-      '/probe/write',
-      await token({ claims: { sub: 'svc-origination', azp: 'origination', scope: 'reservations:write' } }),
-    );
+    const res = await get('/probe/write', await token({ claims: { sub: 'svc-origination', azp: 'origination', scope: 'reservations:write' } }));
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({
       subject: 'svc-origination',
@@ -97,9 +94,7 @@ describe('authentication', () => {
     it('without the required scope', async () => {
       const res = await get('/probe/write', await token({ claims: { scope: 'programs:read:all' } }));
       expect(res.statusCode).toBe(403);
-      expect(res.headers['www-authenticate']).toBe(
-        'Bearer error="insufficient_scope", scope="reservations:write"',
-      );
+      expect(res.headers['www-authenticate']).toBe('Bearer error="insufficient_scope", scope="reservations:write"');
       expect(res.json()).toMatchObject({ code: 'FORBIDDEN' });
     });
 
@@ -109,10 +104,7 @@ describe('authentication', () => {
     });
 
     it('an endpoint without declared scopes', async () => {
-      const res = await get(
-        '/probe/undeclared',
-        await token({ claims: { scope: 'reservations:write programs:read:all breaks:read audit:read' } }),
-      );
+      const res = await get('/probe/undeclared', await token({ claims: { scope: 'reservations:write programs:read:all breaks:read audit:read' } }));
       expect(res.statusCode).toBe(403);
     });
   });
@@ -125,10 +117,7 @@ describe('authentication', () => {
     });
 
     it('programs:read:own with client_ref', async () => {
-      const res = await get(
-        '/probe/read',
-        await token({ claims: { scope: 'programs:read:own', client_ref: 'C1' } }),
-      );
+      const res = await get('/probe/read', await token({ claims: { scope: 'programs:read:own', client_ref: 'C1' } }));
       expect(res.statusCode).toBe(200);
       expect(res.json()).toEqual({ clientRef: 'C1' });
     });

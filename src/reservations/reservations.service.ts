@@ -13,20 +13,9 @@ import { minorUnits } from '../shared/money/currency.js';
 import { fitsMinorUnits, formatAmount, formatCapacity } from '../shared/money/money.js';
 import { businessDate, Clock } from '../shared/time/clock.js';
 import { assess, DECLINE_STATUS, needsFx } from './domain/assess.js';
-import type {
-  AssessContext,
-  DeclineCode,
-  FxQuote,
-  ProgramState,
-  ReserveInput,
-} from './domain/assess.types.js';
+import type { AssessContext, DeclineCode, FxQuote, ProgramState, ReserveInput } from './domain/assess.types.js';
 import { ReservationRepository } from './reservation.repository.js';
-import type {
-  ExistingReservation,
-  ReserveCommand,
-  ReserveOutcome as Outcome,
-  ReserveResult,
-} from './reservation.types.js';
+import type { ExistingReservation, ReserveCommand, ReserveOutcome as Outcome, ReserveResult } from './reservation.types.js';
 import type { ReserveRequest } from './reserve.dto.js';
 
 export function requestHash(request: ReserveRequest): string {
@@ -125,9 +114,7 @@ export class ReservationsService {
       currency: request.currency,
       dueDate: request.dueDate,
     };
-    const fx = needsFx(program, input)
-      ? await this.repository.currentValuationRate(tx, input.currency, program.currency)
-      : undefined;
+    const fx = needsFx(program, input) ? await this.repository.currentValuationRate(tx, input.currency, program.currency) : undefined;
 
     const now = this.clock.now();
     const context: AssessContext = {
@@ -163,27 +150,12 @@ export class ReservationsService {
     const after = await this.repository.consumeCapacity(tx, program.id, assessment.amount);
     if (!after) {
       await this.repository.rollbackToSavepoint(tx);
-      return this.decline(
-        tx,
-        command,
-        program,
-        input,
-        { code: 'INSUFFICIENT_CAPACITY', amount: assessment.amount, fx: assessment.fx },
-        context,
-      );
+      return this.decline(tx, command, program, input, { code: 'INSUFFICIENT_CAPACITY', amount: assessment.amount, fx: assessment.fx }, context);
     }
     await this.repository.insertReserveLedger(tx, program.id, created.id, assessment.amount, after);
     await this.repository.releaseSavepoint(tx);
 
-    const body = this.reservationBody(
-      program,
-      request.invoiceId,
-      input,
-      assessment.amount,
-      assessment.fx,
-      created,
-      after,
-    );
+    const body = this.reservationBody(program, request.invoiceId, input, assessment.amount, assessment.fx, created, after);
     const { id, program: balances, createdAt: _createdAt, ...reservation } = body;
     await writeOutbox(tx, {
       type: 'RESERVATION_CREATED',
@@ -297,12 +269,7 @@ export class ReservationsService {
     });
   }
 
-  private problem(
-    command: ReserveCommand,
-    status: number,
-    code: string,
-    options: { detail?: string; extensions?: Record<string, unknown> } = {},
-  ): Outcome {
+  private problem(command: ReserveCommand, status: number, code: string, options: { detail?: string; extensions?: Record<string, unknown> } = {}): Outcome {
     return {
       status,
       body: problem({

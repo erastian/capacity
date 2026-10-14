@@ -1,9 +1,4 @@
-import {
-  type CanActivate,
-  type ExecutionContext,
-  HttpStatus,
-  Injectable,
-} from '@nestjs/common';
+import { type CanActivate, type ExecutionContext, HttpStatus, Injectable } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import type { FastifyRequest } from 'fastify';
 import { AppError } from '../errors/app-error.js';
@@ -41,16 +36,13 @@ export class AuthGuard implements CanActivate {
       return true;
     }
 
-    const request = context
-      .switchToHttp()
-      .getRequest<FastifyRequest & { principal?: Principal }>();
+    const request = context.switchToHttp().getRequest<FastifyRequest & { principal?: Principal }>();
 
     const token = BEARER.exec(request.headers.authorization ?? '')?.[1];
     const principal = token ? await this.verifier.verify(token) : undefined;
     if (!principal) throw unauthenticated();
 
-    const required =
-      this.reflector.getAllAndOverride<Scope[]>(SCOPES_KEY, targets) ?? [];
+    const required = this.reflector.getAllAndOverride<Scope[]>(SCOPES_KEY, targets) ?? [];
     if (!required.some((scope) => principal.scopes.has(scope))) {
       throw forbidden(required);
     }

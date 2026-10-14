@@ -138,7 +138,13 @@ describe('toCommand', () => {
     });
 
     it('builds RECONCILIATION_BATCH_COMPLETED from the envelope batch id', () => {
-      const value = envelope({ type: 'RECONCILIATION_BATCH_COMPLETED', programId: undefined, version: undefined, batchId: 'B-1', payload: { programCount: 3 } });
+      const value = envelope({
+        type: 'RECONCILIATION_BATCH_COMPLETED',
+        programId: undefined,
+        version: undefined,
+        batchId: 'B-1',
+        payload: { programCount: 3 },
+      });
       expect(toCommand(parse(value))).toEqual({
         kind: 'command',
         command: { type: 'RECONCILIATION_BATCH_COMPLETED', batchId: 'B-1', programCount: 3 },
@@ -174,8 +180,7 @@ describe('toCommand', () => {
   });
 
   describe('invoice messages', () => {
-    const invoice = (type: string, payload: Record<string, unknown>) =>
-      envelope({ type, version: undefined, payload: { invoiceId: 'INV-1', ...payload } });
+    const invoice = (type: string, payload: Record<string, unknown>) => envelope({ type, version: undefined, payload: { invoiceId: 'INV-1', ...payload } });
 
     const allocation = (payload: Record<string, unknown> = {}) =>
       invoice('INVOICE_PAYMENT_ALLOCATED', {
@@ -195,7 +200,10 @@ describe('toCommand', () => {
         'a payment in the invoice currency',
         allocation({ payment: { amount: '10.00', currency: 'USD' }, settledAmount: { amount: '10.00', currency: 'USD' }, fxRateId: undefined }),
       ],
-      ['a write-off', invoice('INVOICE_BALANCE_WRITTEN_OFF', { writeOffId: 'W-1', amount: { amount: '0.03', currency: 'USD' }, writeOffReason: 'BANK_CHARGES' })],
+      [
+        'a write-off',
+        invoice('INVOICE_BALANCE_WRITTEN_OFF', { writeOffId: 'W-1', amount: { amount: '0.03', currency: 'USD' }, writeOffReason: 'BANK_CHARGES' }),
+      ],
       ['a cancellation', invoice('INVOICE_FUNDING_CANCELLED', { cancellationId: 'C-1', cancellationReason: 'PAYOUT_FAILED' })],
       ['a reversal', invoice('INVOICE_RELEASE_REVERSED', { reversalId: 'REV-1', externalRef: 'A-1' })],
     ])('builds %s', (_, value) => {

@@ -1,14 +1,7 @@
 import { Controller, Get, Query } from '@nestjs/common';
 import { RequireScopes } from '../shared/auth/decorators.js';
 import { Scope } from '../shared/auth/scopes.js';
-import {
-  DeclineJournalQuery,
-  FundingsQuery,
-  InboxQuery,
-  LedgerQuery,
-  OutboxQuery,
-  ParkedQuery,
-} from './audit.dto.js';
+import { DeclineJournalQuery, FundingsQuery, InboxQuery, LedgerQuery, OutboxQuery, ParkedQuery } from './audit.dto.js';
 import { AuditQueries } from './audit.queries.js';
 
 @Controller('v1/audit')

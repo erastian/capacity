@@ -1,12 +1,5 @@
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
-import {
-  Consumer,
-  MessagesStreamModes,
-  Producer,
-  ProduceAcks,
-  stringDeserializers,
-  stringSerializers,
-} from '@platformatic/kafka';
+import { Consumer, MessagesStreamModes, Producer, ProduceAcks, stringDeserializers, stringSerializers } from '@platformatic/kafka';
 import { randomUUID } from 'node:crypto';
 import { closeDb, db, seedProgram, unique } from '../support/db.js';
 import { token } from '../support/issuer.js';
@@ -140,7 +133,10 @@ describe('with Kafka', () => {
       await holdsFor(() => leaders() <= 1, 1000);
       expect(leaders()).toBe(1);
 
-      const [leader] = apps.splice(relays().findIndex((relay) => relay.isLeader), 1);
+      const [leader] = apps.splice(
+        relays().findIndex((relay) => relay.isLeader),
+        1,
+      );
       await leader.close();
 
       await waitFor(() => apps[0].get(OutboxRelay).isLeader);
@@ -204,10 +200,7 @@ describe('with Kafka', () => {
         return rows[0]?.credit_limit === '5000.0000';
       });
 
-      const { rows } = await db().query(
-        'SELECT kafka_timestamp, as_of FROM processed_message WHERE message_id = $1',
-        [messageId],
-      );
+      const { rows } = await db().query('SELECT kafka_timestamp, as_of FROM processed_message WHERE message_id = $1', [messageId]);
       expect(rows[0].kafka_timestamp.getTime()).toBeGreaterThanOrEqual(new Date(asOf).getTime());
 
       const [status] = await collect('capacity.message-status', (m) => json(m).data?.messageId === messageId, 1);
@@ -276,10 +269,8 @@ describe('with Kafka', () => {
             },
           ],
         });
-      const quoteStored = (rateId: string) =>
-        waitFor(async () => (await db().query('SELECT 1 FROM fx_rate WHERE external_id = $1', [rateId])).rowCount === 1);
-      const reservedOf = async (programId: string) =>
-        (await db().query('SELECT reserved FROM program WHERE external_id = $1', [programId])).rows[0]?.reserved;
+      const quoteStored = (rateId: string) => waitFor(async () => (await db().query('SELECT 1 FROM fx_rate WHERE external_id = $1', [rateId])).rowCount === 1);
+      const reservedOf = async (programId: string) => (await db().query('SELECT reserved FROM program WHERE external_id = $1', [programId])).rows[0]?.reserved;
       const allocate = (programId: string, invoiceId: string, payment: { amount: string; currency: string }, settled: string, fxRateId?: string) =>
         sendTreasury(programId, {
           messageId: unique('m'),

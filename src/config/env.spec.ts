@@ -4,8 +4,7 @@ const VALID = {
   DATABASE_URL: 'postgresql://u:p@localhost/db',
   AUTH_ISSUER: 'http://localhost:8080/realms/capacity',
   AUTH_AUDIENCE: 'capacity-api',
-  AUTH_JWKS_URL:
-    'http://localhost:8080/realms/capacity/protocol/openid-connect/certs',
+  AUTH_JWKS_URL: 'http://localhost:8080/realms/capacity/protocol/openid-connect/certs',
   KAFKA_BROKERS: 'localhost:9092',
   KAFKA_SASL_USERNAME: 'capacity',
   KAFKA_SASL_PASSWORD: 'secret',

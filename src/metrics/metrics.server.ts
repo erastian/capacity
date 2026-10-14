@@ -1,9 +1,4 @@
-import {
-  Injectable,
-  Logger,
-  OnApplicationBootstrap,
-  OnApplicationShutdown,
-} from '@nestjs/common';
+import { Injectable, Logger, OnApplicationBootstrap, OnApplicationShutdown } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
@@ -12,9 +7,7 @@ import type { Env } from '../config/env.js';
 import { listenUrls } from '../shared/http/listen-urls.js';
 
 @Injectable()
-export class MetricsServer
-  implements OnApplicationBootstrap, OnApplicationShutdown
-{
+export class MetricsServer implements OnApplicationBootstrap, OnApplicationShutdown {
   readonly registry = new Registry();
   private readonly logger = new Logger(MetricsServer.name);
   private server?: Server;
@@ -53,9 +46,7 @@ export class MetricsServer
       });
     });
     this.server.on('error', (error) => this.logger.error(error));
-    this.logger.log(
-      `Metrics listening on ${listenUrls(this.port!, '/metrics').join(', ')}`,
-    );
+    this.logger.log(`Metrics listening on ${listenUrls(this.port!, '/metrics').join(', ')}`);
   }
 
   async onApplicationShutdown(): Promise<void> {

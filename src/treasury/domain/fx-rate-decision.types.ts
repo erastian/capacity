@@ -11,7 +11,4 @@ export interface StoredQuote {
   rate?: Decimal;
 }
 
-export type FxRatePlan =
-  | { outcome: 'APPLIED' }
-  | { outcome: 'STALE' }
-  | { outcome: 'REJECTED'; reason: 'FX_RATE_CONFLICT'; conflictsWith: string };
+export type FxRatePlan = { outcome: 'APPLIED' } | { outcome: 'STALE' } | { outcome: 'REJECTED'; reason: 'FX_RATE_CONFLICT'; conflictsWith: string };

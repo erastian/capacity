@@ -20,12 +20,7 @@ export class ReservationsController {
   @Get()
   @RequireScopes(Scope.ProgramsReadAll, Scope.ProgramsReadOwn)
   list(@Query() query: ReservationsQuery, @CurrentPrincipal() principal: Principal) {
-    return this.queries.list(
-      viewerOf(principal),
-      { programId: query.programId, invoiceId: query.invoiceId, status: query.status },
-      query.limit,
-      query.cursor,
-    );
+    return this.queries.list(viewerOf(principal), { programId: query.programId, invoiceId: query.invoiceId, status: query.status }, query.limit, query.cursor);
   }
 
   @Get(':id')

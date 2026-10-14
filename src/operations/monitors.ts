@@ -6,13 +6,7 @@ import { MetricsServer } from '../metrics/metrics.server.js';
 import { PrismaService } from '../shared/db/prisma.service.js';
 import { businessDate, Clock } from '../shared/time/clock.js';
 import { Periodic } from '../shared/time/periodic.js';
-import type {
-  AgedParkedMessage,
-  MonitorSnapshot,
-  OverdueReservation,
-  StalledOutbox,
-  StaleProgram,
-} from './operations.types.js';
+import type { AgedParkedMessage, MonitorSnapshot, OverdueReservation, StalledOutbox, StaleProgram } from './operations.types.js';
 
 @Injectable()
 export class OperationalMonitors implements OnApplicationBootstrap, BeforeApplicationShutdown {
@@ -83,9 +77,7 @@ export class OperationalMonitors implements OnApplicationBootstrap, BeforeApplic
       this.staleTreasury(now),
       this.oldestUnpublished(),
     ]);
-    const outboxLagSeconds = oldestUnpublished
-      ? Math.max(0, (now.getTime() - oldestUnpublished.createdAt.getTime()) / 1000)
-      : 0;
+    const outboxLagSeconds = oldestUnpublished ? Math.max(0, (now.getTime() - oldestUnpublished.createdAt.getTime()) / 1000) : 0;
     const stalled = oldestUnpublished && outboxLagSeconds > this.outboxMaxLagSeconds ? [oldestUnpublished] : [];
 
     this.overdueGauge.set({ funded: 'true' }, overdue.filter((item) => item.funded).length);
@@ -94,19 +86,33 @@ export class OperationalMonitors implements OnApplicationBootstrap, BeforeApplic
     this.staleGauge.set(staleTreasury.length);
     this.outboxLagGauge.set(outboxLagSeconds);
 
-    this.track('RESERVATION_OVERDUE', overdue, (item) => item.reservationId, (item) =>
-      `reservation ${item.reservationId} (invoice ${item.invoiceId}, program ${item.programId}) is past due ${item.dueDate}, ${
-        item.funded ? 'funded: buyer arrears' : 'unfunded: limit leak'
-      }`,
+    this.track(
+      'RESERVATION_OVERDUE',
+      overdue,
+      (item) => item.reservationId,
+      (item) =>
+        `reservation ${item.reservationId} (invoice ${item.invoiceId}, program ${item.programId}) is past due ${item.dueDate}, ${
+          item.funded ? 'funded: buyer arrears' : 'unfunded: limit leak'
+        }`,
     );
-    this.track('PARKED_MESSAGE_AGED', agedParked, (item) => item.messageId, (item) =>
-      `message ${item.messageId} of program ${item.programId} waits for ${item.awaitingKind} ${item.awaitingRef} since ${item.parkedAt.toISOString()}`,
+    this.track(
+      'PARKED_MESSAGE_AGED',
+      agedParked,
+      (item) => item.messageId,
+      (item) =>
+        `message ${item.messageId} of program ${item.programId} waits for ${item.awaitingKind} ${item.awaitingRef} since ${item.parkedAt.toISOString()}`,
     );
-    this.track('TREASURY_DATA_STALE', staleTreasury, (item) => item.programId, (item) =>
-      `program ${item.programId} last confirmed by treasury at ${item.syncedAt?.toISOString() ?? 'never'}`,
+    this.track(
+      'TREASURY_DATA_STALE',
+      staleTreasury,
+      (item) => item.programId,
+      (item) => `program ${item.programId} last confirmed by treasury at ${item.syncedAt?.toISOString() ?? 'never'}`,
     );
-    this.track('OUTBOX_STALLED', stalled, () => 'outbox', (item) =>
-      `event ${item.eventId} (${item.type}) is unpublished since ${item.createdAt.toISOString()}`,
+    this.track(
+      'OUTBOX_STALLED',
+      stalled,
+      () => 'outbox',
+      (item) => `event ${item.eventId} (${item.type}) is unpublished since ${item.createdAt.toISOString()}`,
     );
 
     return { overdue, agedParked, staleTreasury, outboxLagSeconds };
@@ -125,9 +131,7 @@ export class OperationalMonitors implements OnApplicationBootstrap, BeforeApplic
   }
 
   private async overdue(today: string): Promise<OverdueReservation[]> {
-    const rows = await this.prisma.$queryRaw<
-      { id: string; program_id: string; invoice_id: string; due_date: string; funded: boolean }[]
-    >`
+    const rows = await this.prisma.$queryRaw<{ id: string; program_id: string; invoice_id: string; due_date: string; funded: boolean }[]>`
       SELECT r.id, p.external_id AS program_id, r.invoice_id, r.due_date::text AS due_date, r.funded_at IS NOT NULL AS funded
       FROM reservation r
       JOIN program p ON p.id = r.program_id

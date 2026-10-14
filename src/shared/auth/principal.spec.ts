@@ -18,15 +18,11 @@ describe('toPrincipal', () => {
   });
 
   it('falls back to client_id when azp is absent', () => {
-    expect(toPrincipal({ sub: 's', client_id: 'origination' })?.clientId).toBe(
-      'origination',
-    );
+    expect(toPrincipal({ sub: 's', client_id: 'origination' })?.clientId).toBe('origination');
   });
 
   it('drops programs:read:own without client_ref', () => {
-    expect(
-      toPrincipal({ sub: 'u1', scope: 'programs:read:own breaks:read' })?.scopes,
-    ).toEqual(new Set(['breaks:read']));
+    expect(toPrincipal({ sub: 'u1', scope: 'programs:read:own breaks:read' })?.scopes).toEqual(new Set(['breaks:read']));
   });
 
   it('ignores unknown scopes', () => {

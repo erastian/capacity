@@ -70,11 +70,7 @@ export type InvoiceBreakReason =
   | 'EXTERNAL_REF_CONFLICT'
   | 'UNKNOWN_RELEASE';
 
-export type InvoiceRejectReason =
-  | InvoiceBreakReason
-  | 'RESERVATION_CLOSED'
-  | 'RELEASE_ALREADY_REVERSED'
-  | 'RELEASE_NOT_REVERSIBLE';
+export type InvoiceRejectReason = InvoiceBreakReason | 'RESERVATION_CLOSED' | 'RELEASE_ALREADY_REVERSED' | 'RELEASE_NOT_REVERSIBLE';
 
 export interface InvoiceBreak {
   reason: InvoiceBreakReason;

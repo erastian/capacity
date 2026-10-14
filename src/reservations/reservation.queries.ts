@@ -95,12 +95,7 @@ export class ReservationQueries {
     private readonly clock: Clock,
   ) {}
 
-  async list(
-    viewer: Viewer,
-    filter: ReservationFilter,
-    limit: number,
-    cursor: string | undefined,
-  ): Promise<Page<ReservationView>> {
+  async list(viewer: Viewer, filter: ReservationFilter, limit: number, cursor: string | undefined): Promise<Page<ReservationView>> {
     if (viewer.scope.kind === 'none') return { items: [], nextCursor: null };
     if (filter.programId !== undefined && !(await this.programVisible(viewer.scope, filter.programId))) {
       throw new AppError(HttpStatus.NOT_FOUND, 'PROGRAM_NOT_FOUND', { detail: `Program ${filter.programId} not found` });
@@ -123,7 +118,12 @@ export class ReservationQueries {
       after?.[1] ?? null,
       limit + 1,
     );
-    return toPage(rows, limit, (row) => [row.created_at.toISOString(), row.id], (row) => this.view(row, viewer));
+    return toPage(
+      rows,
+      limit,
+      (row) => [row.created_at.toISOString(), row.id],
+      (row) => this.view(row, viewer),
+    );
   }
 
   async card(viewer: Viewer, id: string): Promise<ReservationCard> {
@@ -266,10 +266,7 @@ export class ReservationQueries {
           ? {
               id: row.payment_id,
               amount: inCurrency(dec(row.payment_amount), row.payment_currency),
-              fx:
-                row.payment_rate_id && row.payment_rate !== null
-                  ? { rateId: row.payment_rate_id, rate: dec(row.payment_rate).toFixed() }
-                  : null,
+              fx: row.payment_rate_id && row.payment_rate !== null ? { rateId: row.payment_rate_id, rate: dec(row.payment_rate).toFixed() } : null,
             }
           : undefined;
       const reason = row.cancellation_reason ?? row.write_off_reason ?? undefined;

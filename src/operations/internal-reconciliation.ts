@@ -6,14 +6,7 @@ import { MetricsServer } from '../metrics/metrics.server.js';
 import { PrismaService } from '../shared/db/prisma.service.js';
 import { Clock } from '../shared/time/clock.js';
 import { Periodic } from '../shared/time/periodic.js';
-import type {
-  CheckResult,
-  DirtyReservationRow,
-  LedgerChainRow,
-  Mismatch,
-  ProgramTotalsRow,
-  ReconciliationReport,
-} from './operations.types.js';
+import type { CheckResult, DirtyReservationRow, LedgerChainRow, Mismatch, ProgramTotalsRow, ReconciliationReport } from './operations.types.js';
 
 const SAMPLE_PER_CHECK = 100;
 const PROGRAM_BATCH = 500;
@@ -87,14 +80,7 @@ export class InternalReconciliation implements OnApplicationBootstrap, BeforeApp
 
   async run(): Promise<ReconciliationReport> {
     const startedAt = this.clock.now();
-    const found = new Collector([
-      'PROGRAM_RESERVED',
-      'PROGRAM_LEDGER',
-      'OPEN_BLOCKING_BREAKS',
-      LEDGER_CHAIN,
-      'RESERVATION_RELEASES',
-      'RESERVATION_FUNDING',
-    ]);
+    const found = new Collector(['PROGRAM_RESERVED', 'PROGRAM_LEDGER', 'OPEN_BLOCKING_BREAKS', LEDGER_CHAIN, 'RESERVATION_RELEASES', 'RESERVATION_FUNDING']);
     const checkpoints = await this.checkpoints();
     const lastFullSweep = new Date(checkpoints.get(FULL_SWEEP) ?? 0).getTime();
     const fullSweep = startedAt.getTime() - lastFullSweep >= this.fullSweepMs;
@@ -102,9 +88,7 @@ export class InternalReconciliation implements OnApplicationBootstrap, BeforeApp
     await this.programTotals(found);
     const ledgerFrom = fullSweep ? 0n : BigInt(checkpoints.get(LEDGER_CHAIN) ?? '0');
     const verifiedLedgerId = await this.ledgerChain(ledgerFrom, found);
-    const since = fullSweep
-      ? new Date(0)
-      : new Date(new Date(checkpoints.get(RESERVATIONS) ?? 0).getTime() - this.settleMs);
+    const since = fullSweep ? new Date(0) : new Date(new Date(checkpoints.get(RESERVATIONS) ?? 0).getTime() - this.settleMs);
     await this.changedReservations(since, found);
 
     if (found.count(LEDGER_CHAIN) === 0) await this.saveCheckpoint(LEDGER_CHAIN, verifiedLedgerId.toString());
@@ -116,9 +100,7 @@ export class InternalReconciliation implements OnApplicationBootstrap, BeforeApp
     for (const result of found.all()) {
       this.mismatchGauge.set({ check: result.check }, result.count);
       if (result.count > 0) {
-        this.logger.error(
-          `INTERNAL_RECONCILIATION_FAILED: ${result.check} has ${result.count} mismatches, first ${result.sample[0]!.subject}`,
-        );
+        this.logger.error(`INTERNAL_RECONCILIATION_FAILED: ${result.check} has ${result.count} mismatches, first ${result.sample[0]!.subject}`);
       }
     }
     const mismatches = found.all().flatMap((result) => result.sample);

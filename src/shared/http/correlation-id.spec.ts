@@ -4,9 +4,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{1
 
 describe('resolveCorrelationId', () => {
   it('takes a valid X-Correlation-Id', () => {
-    expect(resolveCorrelationId({ 'x-correlation-id': 'abc-123' })).toBe(
-      'abc-123',
-    );
+    expect(resolveCorrelationId({ 'x-correlation-id': 'abc-123' })).toBe('abc-123');
   });
 
   it('prefers X-Correlation-Id over traceparent', () => {

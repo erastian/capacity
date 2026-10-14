@@ -79,10 +79,7 @@ export class InboxRepository {
   }
 
   async findParked(tx: Tx, messageId: string): Promise<ParkedRecord | undefined> {
-    const rows = await tx.$queryRawUnsafe<ParkedRow[]>(
-      `SELECT ${PARKED_COLUMNS} FROM parked_message WHERE message_id = $1`,
-      messageId,
-    );
+    const rows = await tx.$queryRawUnsafe<ParkedRow[]>(`SELECT ${PARKED_COLUMNS} FROM parked_message WHERE message_id = $1`, messageId);
     return rows[0] && toParked(rows[0]);
   }
 

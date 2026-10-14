@@ -1,16 +1,7 @@
 import { ProduceAcks, Producer, stringSerializers } from '@platformatic/kafka';
 import { randomUUID } from 'node:crypto';
 import { setTimeout as sleep } from 'node:timers/promises';
-import type {
-  CachedToken,
-  Credentials,
-  Money,
-  ProgramMessage,
-  Quote,
-  Scenario,
-  SimulatorConfig,
-  World,
-} from './treasury-simulator.types.js';
+import type { CachedToken, Credentials, Money, ProgramMessage, Quote, Scenario, SimulatorConfig, World } from './treasury-simulator.types.js';
 
 const env = process.env;
 
@@ -45,13 +36,7 @@ async function token(credentials: Credentials): Promise<string> {
   return body.access_token;
 }
 
-async function api(
-  as: Credentials,
-  method: string,
-  path: string,
-  body?: unknown,
-  headers: Record<string, string> = {},
-) {
+async function api(as: Credentials, method: string, path: string, body?: unknown, headers: Record<string, string> = {}) {
   const res = await fetch(`${config.apiUrl}${path}`, {
     method,
     headers: { authorization: `Bearer ${await token(as)}`, 'content-type': 'application/json', ...headers },

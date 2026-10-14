@@ -41,18 +41,11 @@ export function isDataError(error: unknown): boolean {
 }
 
 export function isPoolExhausted(error: unknown): boolean {
-  return (
-    error instanceof Prisma.PrismaClientKnownRequestError &&
-    error.code === TRANSACTION_UNAVAILABLE &&
-    error.message.includes(START_TIMED_OUT)
-  );
+  return error instanceof Prisma.PrismaClientKnownRequestError && error.code === TRANSACTION_UNAVAILABLE && error.message.includes(START_TIMED_OUT);
 }
 
 export function isTransient(error: unknown): boolean {
-  if (
-    error instanceof Prisma.PrismaClientInitializationError ||
-    error instanceof Prisma.PrismaClientUnknownRequestError
-  ) {
+  if (error instanceof Prisma.PrismaClientInitializationError || error instanceof Prisma.PrismaClientUnknownRequestError) {
     return true;
   }
   if (!(error instanceof Prisma.PrismaClientKnownRequestError)) {

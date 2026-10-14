@@ -56,11 +56,7 @@ export class RateQueries {
     return rows[0] && toQuote(rows[0]);
   }
 
-  async list(
-    filter: { from?: string; to?: string; rateType?: RateType },
-    limit: number,
-    cursor: string | undefined,
-  ): Promise<Page<QuoteView>> {
+  async list(filter: { from?: string; to?: string; rateType?: RateType }, limit: number, cursor: string | undefined): Promise<Page<QuoteView>> {
     const after = decodeCursor(cursor, [CURSOR_PART.text, CURSOR_PART.text, RATE_TYPE]);
     const rows = await this.prisma.$queryRawUnsafe<QuoteRow[]>(
       `${CURRENT}
@@ -78,6 +74,11 @@ export class RateQueries {
       after?.[2] ?? null,
       limit + 1,
     );
-    return toPage(rows, limit, (row) => [row.from_currency, row.to_currency, row.rate_type], (row) => quoteView(toQuote(row)));
+    return toPage(
+      rows,
+      limit,
+      (row) => [row.from_currency, row.to_currency, row.rate_type],
+      (row) => quoteView(toQuote(row)),
+    );
   }
 }

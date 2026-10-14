@@ -59,28 +59,18 @@ describe('assess', () => {
   });
 
   it('converts with the valuation rate, rounding up', () => {
-    const result = assess(
-      program(),
-      input({ currency: 'USD', originalAmount: new Decimal('100.01') }),
-      quote({ rate: new Decimal('0.333333') }),
-      context,
-    );
+    const result = assess(program(), input({ currency: 'USD', originalAmount: new Decimal('100.01') }), quote({ rate: new Decimal('0.333333') }), context);
     expect(result).toMatchObject({ outcome: 'reserve' });
     expect(result.amount?.toFixed(4)).toBe('33.3367');
     expect(result.fx?.rateId).toBe('R1');
   });
 
   it('accepts a due date equal to the business date', () => {
-    expect(
-      assess(program(), input({ dueDate: '2026-10-13' }), undefined, context).outcome,
-    ).toBe('reserve');
+    expect(assess(program(), input({ dueDate: '2026-10-13' }), undefined, context).outcome).toBe('reserve');
   });
 
   it('fits exactly the available capacity', () => {
-    expect(
-      assess(program(), input({ originalAmount: new Decimal(500) }), undefined, context)
-        .outcome,
-    ).toBe('reserve');
+    expect(assess(program(), input({ originalAmount: new Decimal(500) }), undefined, context).outcome).toBe('reserve');
   });
 
   it.each<[string, Partial<ProgramState>, Partial<ReserveInput>, FxQuote | undefined, string]>([
@@ -101,19 +91,12 @@ describe('assess', () => {
   });
 
   it('checks in the documented order: due date before status before capacity', () => {
-    expect(
-      assess(
-        program({ status: 'CLOSED', creditLimit: new Decimal(0) }),
-        input({ dueDate: '2026-01-01' }),
-        undefined,
-        context,
-      ),
-    ).toMatchObject({ code: 'INVOICE_PAST_DUE' });
+    expect(assess(program({ status: 'CLOSED', creditLimit: new Decimal(0) }), input({ dueDate: '2026-01-01' }), undefined, context)).toMatchObject({
+      code: 'INVOICE_PAST_DUE',
+    });
   });
 
   it('ignores a rate when currencies match', () => {
-    expect(
-      assess(program(), input(), quote({ status: 'SUSPENDED' }), context).outcome,
-    ).toBe('reserve');
+    expect(assess(program(), input(), quote({ status: 'SUSPENDED' }), context).outcome).toBe('reserve');
   });
 });

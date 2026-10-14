@@ -17,11 +17,7 @@ export interface ProgramView {
   statusVersion: bigint | null;
 }
 
-export type BreakReason =
-  | 'CURRENCY_MISMATCH'
-  | 'VERSION_CONFLICT'
-  | 'CLIENT_MISMATCH'
-  | 'INVALID_STATUS_TRANSITION';
+export type BreakReason = 'CURRENCY_MISMATCH' | 'VERSION_CONFLICT' | 'CLIENT_MISMATCH' | 'INVALID_STATUS_TRANSITION';
 
 export interface BreakSpec {
   reason: BreakReason;
@@ -50,10 +46,7 @@ export interface NewProgram {
   status: VersionedStatus;
 }
 
-export type LedgerKind =
-  | 'TREASURY_LIMIT_UPDATED'
-  | 'TREASURY_EXTERNAL_UTILIZATION_UPDATED'
-  | 'TREASURY_SNAPSHOT';
+export type LedgerKind = 'TREASURY_LIMIT_UPDATED' | 'TREASURY_EXTERNAL_UTILIZATION_UPDATED' | 'TREASURY_SNAPSHOT';
 
 export type ProgramPlan =
   | { outcome: 'APPLIED'; create: NewProgram; ledger: LedgerKind }

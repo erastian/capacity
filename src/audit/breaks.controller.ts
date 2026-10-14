@@ -12,11 +12,7 @@ export class BreaksController {
 
   @Get('breaks')
   list(@Query() query: BreaksQuery) {
-    return this.audit.breaks(
-      { programId: query.programId, open: query.open, reason: query.reason },
-      query.limit,
-      query.cursor,
-    );
+    return this.audit.breaks({ programId: query.programId, open: query.open, reason: query.reason }, query.limit, query.cursor);
   }
 
   @Get('programs/:programId/breaks')

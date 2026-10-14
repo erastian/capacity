@@ -6,7 +6,5 @@ export function listenUrls(port: number, path = ''): string[] {
     .filter((info) => info?.family === 'IPv4' && !info.internal)
     .map((info) => info!.address);
 
-  return ['localhost', ...addresses].map(
-    (host) => `http://${host}:${port}${path}`,
-  );
+  return ['localhost', ...addresses].map((host) => `http://${host}:${port}${path}`);
 }

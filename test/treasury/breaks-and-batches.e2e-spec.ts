@@ -35,9 +35,7 @@ describe('break resolution and reconciliation batches', () => {
   let bearer: string;
 
   beforeAll(async () => {
-    app = await startApp(undefined, (builder) =>
-      builder.overrideProvider(EventPublisher).useValue(new CapturingPublisher()),
-    );
+    app = await startApp(undefined, (builder) => builder.overrideProvider(EventPublisher).useValue(new CapturingPublisher()));
     processor = app.get(InboundProcessor);
     batches = app.get(ReconciliationBatches);
     bearer = await token({ claims: ORIGINATION });
@@ -75,12 +73,10 @@ describe('break resolution and reconciliation batches', () => {
   const resolve = (programId: string, breakId: string) => send('BREAK_RESOLVED', programId, { breakId });
 
   const inbox = async (messageId: string) =>
-    (await db().query('SELECT outcome::text AS outcome, reason FROM processed_message WHERE message_id = $1', [messageId]))
-      .rows[0];
+    (await db().query('SELECT outcome::text AS outcome, reason FROM processed_message WHERE message_id = $1', [messageId])).rows[0];
 
   const openBlocking = async (programId: string) =>
-    (await db().query('SELECT open_blocking_breaks FROM program WHERE external_id = $1', [programId])).rows[0]
-      ?.open_blocking_breaks;
+    (await db().query('SELECT open_blocking_breaks FROM program WHERE external_id = $1', [programId])).rows[0]?.open_blocking_breaks;
 
   const breakOf = async (programId: string, reason: string) =>
     (
@@ -95,10 +91,9 @@ describe('break resolution and reconciliation batches', () => {
 
   const resolvedEvents = async (programId: string) =>
     (
-      await db().query(
-        `SELECT payload -> 'data' AS data FROM outbox_event WHERE partition_key = $1 AND type = 'PROGRAM_BREAK_RESOLVED' ORDER BY id`,
-        [programId],
-      )
+      await db().query(`SELECT payload -> 'data' AS data FROM outbox_event WHERE partition_key = $1 AND type = 'PROGRAM_BREAK_RESOLVED' ORDER BY id`, [
+        programId,
+      ])
     ).rows.map((row) => row.data);
 
   const batch = async (batchId: string) =>

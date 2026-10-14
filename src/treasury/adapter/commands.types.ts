@@ -52,12 +52,7 @@ export interface ProgramReinstated {
   version: bigint;
 }
 
-export type ProgramCommand =
-  | ProgramSnapshot
-  | LimitUpdated
-  | ExternalUtilizationUpdated
-  | ProgramStatusChanged
-  | ProgramReinstated;
+export type ProgramCommand = ProgramSnapshot | LimitUpdated | ExternalUtilizationUpdated | ProgramStatusChanged | ProgramReinstated;
 
 export type FxRateType = 'VALUATION' | 'CONVERSION';
 
@@ -125,12 +120,7 @@ export interface InvoiceReleaseReversed {
 }
 
 export type InvoiceCommand =
-  | InvoiceFunded
-  | InvoiceFundingReturned
-  | InvoicePaymentAllocated
-  | InvoiceBalanceWrittenOff
-  | InvoiceFundingCancelled
-  | InvoiceReleaseReversed;
+  InvoiceFunded | InvoiceFundingReturned | InvoicePaymentAllocated | InvoiceBalanceWrittenOff | InvoiceFundingCancelled | InvoiceReleaseReversed;
 
 export interface BreakResolved {
   type: 'BREAK_RESOLVED';
@@ -144,15 +134,7 @@ export interface ReconciliationBatchCompleted {
   programCount: number;
 }
 
-export type Command =
-  | ProgramCommand
-  | InvoiceCommand
-  | BreakResolved
-  | FxRatePublished
-  | ReconciliationBatchCompleted;
+export type Command = ProgramCommand | InvoiceCommand | BreakResolved | FxRatePublished | ReconciliationBatchCompleted;
 
 export type CommandResult =
-  | { kind: 'command'; command: Command }
-  | { kind: 'unsupported' }
-  | { kind: 'unsupported_version' }
-  | { kind: 'invalid'; reason: string };
+  { kind: 'command'; command: Command } | { kind: 'unsupported' } | { kind: 'unsupported_version' } | { kind: 'invalid'; reason: string };

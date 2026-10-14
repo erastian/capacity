@@ -127,9 +127,7 @@ export class InboundMetrics {
     const aheadMs = envelope.asOf.getTime() - brokerTimestamp.getTime();
     if (aheadMs > this.clockSkewToleranceMs) {
       this.skew.inc();
-      this.logger.warn(
-        `TREASURY_CLOCK_SKEW: message ${envelope.messageId} asOf is ${Math.round(aheadMs / 1000)}s ahead of the broker`,
-      );
+      this.logger.warn(`TREASURY_CLOCK_SKEW: message ${envelope.messageId} asOf is ${Math.round(aheadMs / 1000)}s ahead of the broker`);
     }
   }
 

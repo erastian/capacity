@@ -35,20 +35,13 @@ export function closureCondition(view: BreakView): ClosureCondition {
       return { kind: 'REVERSAL_APPLIED', reservationId: view.reservationId, externalRef };
     }
     case 'FUNDED_AFTER_CANCELLATION':
-      return view.reservationId === null
-        ? UNSATISFIABLE
-        : { kind: 'CANCELLATION_REVERSED', reservationId: view.reservationId };
+      return view.reservationId === null ? UNSATISFIABLE : { kind: 'CANCELLATION_REVERSED', reservationId: view.reservationId };
     default:
       return NONE;
   }
 }
 
 export function versionAbove(program: ProgramView, field: VersionedField, version: bigint): boolean {
-  const current =
-    field === 'creditLimit'
-      ? program.creditLimitVersion
-      : field === 'externalUtilized'
-        ? program.externalUtilizedVersion
-        : program.statusVersion;
+  const current = field === 'creditLimit' ? program.creditLimitVersion : field === 'externalUtilized' ? program.externalUtilizedVersion : program.statusVersion;
   return current !== null && current > version;
 }

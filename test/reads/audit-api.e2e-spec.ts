@@ -37,8 +37,7 @@ describe('audit and break journals', () => {
     return messageId;
   };
 
-  const get = (who: keyof typeof bearer, url: string) =>
-    app.inject({ method: 'GET', url, headers: { authorization: `Bearer ${bearer[who]}` } });
+  const get = (who: keyof typeof bearer, url: string) => app.inject({ method: 'GET', url, headers: { authorization: `Bearer ${bearer[who]}` } });
 
   const reserve = (amount: string) =>
     app.inject({
@@ -49,9 +48,7 @@ describe('audit and break journals', () => {
     });
 
   beforeAll(async () => {
-    app = await startApp(undefined, (builder) =>
-      builder.overrideProvider(EventPublisher).useValue(new CapturingPublisher()),
-    );
+    app = await startApp(undefined, (builder) => builder.overrideProvider(EventPublisher).useValue(new CapturingPublisher()));
     processor = app.get(InboundProcessor);
     bearer.auditor = await token({ claims: { sub: 'auditor', scope: 'programs:read:all breaks:read audit:read' } });
     bearer.operator = await token({ claims: { sub: 'operator', scope: 'programs:read:all breaks:read' } });
@@ -171,21 +168,16 @@ describe('audit and break journals', () => {
 
     it('keeps the full decline journal for auditors', async () => {
       const res = (await get('auditor', `/v1/audit/declines?programId=${programId}&code=INSUFFICIENT_CAPACITY`)).json();
-      expect(res.items).toEqual([
-        expect.objectContaining({ requested: { amount: '70.00', currency: 'EUR' }, createdBy: 'svc-origination' }),
-      ]);
+      expect(res.items).toEqual([expect.objectContaining({ requested: { amount: '70.00', currency: 'EUR' }, createdBy: 'svc-origination' })]);
       const tomorrow = new Date(Date.now() + 86_400_000).toISOString();
       expect((await get('auditor', `/v1/audit/declines?programId=${programId}&from=${tomorrow}`)).json().items).toEqual([]);
     });
 
-    it.each(['2026-W01', '2026-001', '2026-01-01T00:00:00', '2026-02-30T00:00:00Z'])(
-      'rejects %s as a decline journal bound',
-      async (from) => {
-        const res = await get('auditor', `/v1/audit/declines?from=${from}`);
-        expect(res.statusCode).toBe(422);
-        expect(res.json()).toMatchObject({ code: 'VALIDATION_FAILED' });
-      },
-    );
+    it.each(['2026-W01', '2026-001', '2026-01-01T00:00:00', '2026-02-30T00:00:00Z'])('rejects %s as a decline journal bound', async (from) => {
+      const res = await get('auditor', `/v1/audit/declines?from=${from}`);
+      expect(res.statusCode).toBe(422);
+      expect(res.json()).toMatchObject({ code: 'VALIDATION_FAILED' });
+    });
 
     it('is closed to everyone without audit:read', async () => {
       for (const path of ['ledger?programId=P', 'inbox', 'parked', `fundings?reservationId=${reservationId}`, 'outbox', 'declines']) {

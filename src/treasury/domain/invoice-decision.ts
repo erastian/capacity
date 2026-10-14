@@ -80,12 +80,7 @@ function rebalance(
   };
 }
 
-function release(
-  reservation: ReservationView,
-  releasedOriginalAmount: Decimal,
-  cancelled: boolean,
-  row: Omit<NewRelease, 'amount'>,
-): InvoicePlan {
+function release(reservation: ReservationView, releasedOriginalAmount: Decimal, cancelled: boolean, row: Omit<NewRelease, 'amount'>): InvoicePlan {
   const { balances, reservedDelta } = rebalance(reservation, releasedOriginalAmount, cancelled);
   return {
     outcome: 'APPLIED',
@@ -93,23 +88,16 @@ function release(
   };
 }
 
-const sameDecimal = (left: Decimal | null, right: Decimal | null) =>
-  left === null || right === null ? left === right : left.eq(right);
+const sameDecimal = (left: Decimal | null, right: Decimal | null) => (left === null || right === null ? left === right : left.eq(right));
 
 function sameRelease(stored: StoredRelease, expected: Partial<StoredRelease>): boolean {
   return Object.entries(expected).every(([key, value]) => {
     const actual = stored[key as keyof StoredRelease];
-    return value instanceof Decimal || actual instanceof Decimal
-      ? sameDecimal(actual as Decimal | null, value as Decimal | null)
-      : actual === value;
+    return value instanceof Decimal || actual instanceof Decimal ? sameDecimal(actual as Decimal | null, value as Decimal | null) : actual === value;
   });
 }
 
-function repeated(
-  reservation: ReservationView,
-  stored: StoredRelease,
-  expected: Partial<StoredRelease>,
-): InvoicePlan {
+function repeated(reservation: ReservationView, stored: StoredRelease, expected: Partial<StoredRelease>): InvoicePlan {
   return sameRelease(stored, expected)
     ? STALE
     : breakOn(reservation, 'EXTERNAL_REF_CONFLICT', false, { externalRef: stored.externalRef, releaseId: stored.id });
@@ -152,11 +140,7 @@ function funded(command: InvoiceFunded, reservation: ReservationView, facts: Inv
   return { outcome: 'APPLIED', effect: { kind: 'FUND', fundingRef } };
 }
 
-function fundingReturned(
-  command: InvoiceFundingReturned,
-  reservation: ReservationView,
-  facts: InvoiceFacts,
-): InvoicePlan {
+function fundingReturned(command: InvoiceFundingReturned, reservation: ReservationView, facts: InvoiceFacts): InvoicePlan {
   const { funding } = facts;
   if (!funding || funding.reservationId !== reservation.id) {
     return breakOn(reservation, 'FUNDING_CONFLICT', false, { fundingRef: command.fundingRef, problem: 'UNKNOWN_FUNDING' });
@@ -300,12 +284,7 @@ function reversed(command: InvoiceReleaseReversed, reservation: ReservationView,
   });
 }
 
-export function decideInvoiceCommand(
-  command: InvoiceCommand,
-  programId: string,
-  reservation: ReservationView | undefined,
-  facts: InvoiceFacts,
-): InvoicePlan {
+export function decideInvoiceCommand(command: InvoiceCommand, programId: string, reservation: ReservationView | undefined, facts: InvoiceFacts): InvoicePlan {
   if (!reservation) {
     return {
       outcome: 'REJECTED',

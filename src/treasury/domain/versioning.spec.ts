@@ -12,9 +12,7 @@ describe('decideField', () => {
     ['same version, same value', 5n, 5n, 50, 'stale'],
     ['same version, different value', 5n, 5n, 100, 'conflict'],
   ])('%s → %s', (_, currentVersion, incomingVersion, incomingValue, decision) => {
-    expect(
-      decideField({ value: 50, version: currentVersion }, { value: incomingValue, version: incomingVersion }, same),
-    ).toBe(decision);
+    expect(decideField({ value: 50, version: currentVersion }, { value: incomingValue, version: incomingVersion }, same)).toBe(decision);
   });
 });
 

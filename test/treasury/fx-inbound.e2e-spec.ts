@@ -8,15 +8,12 @@ import { token } from '../support/issuer.js';
 import type { QuoteInput } from '../support/support.types.js';
 import { nextOffset, quoteMessage as quote } from '../support/treasury-messages.js';
 
-
 describe('treasury FX quotes', () => {
   let app: NestFastifyApplication;
   let processor: InboundProcessor;
 
   beforeAll(async () => {
-    app = await startApp(undefined, (builder) =>
-      builder.overrideProvider(EventPublisher).useValue(new CapturingPublisher()),
-    );
+    app = await startApp(undefined, (builder) => builder.overrideProvider(EventPublisher).useValue(new CapturingPublisher()));
     processor = app.get(InboundProcessor);
   });
 
@@ -26,19 +23,14 @@ describe('treasury FX quotes', () => {
   });
 
   const inbox = async (messageId: string) =>
-    (
-      await db().query(
-        'SELECT type::text AS type, outcome::text AS outcome, reason, program_id FROM processed_message WHERE message_id = $1',
-        [messageId],
-      )
-    ).rows[0];
+    (await db().query('SELECT type::text AS type, outcome::text AS outcome, reason, program_id FROM processed_message WHERE message_id = $1', [messageId]))
+      .rows[0];
 
   const stored = async (rateId: string) =>
     (
-      await db().query(
-        'SELECT from_currency, to_currency, rate_type::text AS rate_type, rate, status::text AS status FROM fx_rate WHERE external_id = $1',
-        [rateId],
-      )
+      await db().query('SELECT from_currency, to_currency, rate_type::text AS rate_type, rate, status::text AS status FROM fx_rate WHERE external_id = $1', [
+        rateId,
+      ])
     ).rows[0];
 
   const statuses = async (messageId: string) =>

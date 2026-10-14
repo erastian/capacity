@@ -70,16 +70,7 @@ export async function seedRate(seed: RateSeed): Promise<string> {
   await db().query(
     `INSERT INTO fx_rate (external_id, from_currency, to_currency, rate_type, version, rate, status, as_of, kafka_timestamp, message_id)
      VALUES ($1, $2, $3, 'VALUATION', $4, $5, $6, $7, $7, $8)`,
-    [
-      rateId,
-      seed.from,
-      seed.to,
-      ++rateVersion,
-      seed.status === 'SUSPENDED' ? null : (seed.rate ?? '1'),
-      seed.status ?? 'ACTIVE',
-      asOf,
-      messageId,
-    ],
+    [rateId, seed.from, seed.to, ++rateVersion, seed.status === 'SUSPENDED' ? null : (seed.rate ?? '1'), seed.status ?? 'ACTIVE', asOf, messageId],
   );
   return rateId;
 }

@@ -23,6 +23,4 @@ export interface ParsedValue {
   nul: boolean;
 }
 
-export type EnvelopeResult =
-  | { kind: 'readable'; envelope: Envelope }
-  | { kind: 'unreadable'; reason: string };
+export type EnvelopeResult = { kind: 'readable'; envelope: Envelope } | { kind: 'unreadable'; reason: string };

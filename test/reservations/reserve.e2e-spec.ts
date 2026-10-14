@@ -27,11 +27,7 @@ describe('POST /v1/reservations', () => {
     await closeDb();
   });
 
-  const reserve = (
-    body: Record<string, unknown>,
-    key: string | null = unique('key'),
-    auth = bearer,
-  ) =>
+  const reserve = (body: Record<string, unknown>, key: string | null = unique('key'), auth = bearer) =>
     app.inject({
       method: 'POST',
       url: '/v1/reservations',
@@ -51,8 +47,7 @@ describe('POST /v1/reservations', () => {
     ...patch,
   });
 
-  const programRow = async (externalId: string) =>
-    (await db().query('SELECT * FROM program WHERE external_id = $1', [externalId])).rows[0];
+  const programRow = async (externalId: string) => (await db().query('SELECT * FROM program WHERE external_id = $1', [externalId])).rows[0];
 
   const outboxFor = async (externalId: string) =>
     (
@@ -220,14 +215,24 @@ describe('POST /v1/reservations', () => {
       ['closed', async () => ({ programId: await seedProgram({ status: 'CLOSED' }) }), 409, 'PROGRAM_CLOSED'],
       ['on hold', async () => ({ programId: await seedProgram({ openBlockingBreaks: 1 }) }), 409, 'PROGRAM_ON_HOLD'],
       ['no rate', async () => ({ programId: await seedProgram({ currency: 'CHF' }), patch: { currency: 'NOK' } }), 422, 'FX_RATE_UNAVAILABLE'],
-      ['suspended rate', async () => {
-        await seedRate({ from: 'SEK', to: 'EUR', status: 'SUSPENDED' });
-        return { programId: await seedProgram(), patch: { currency: 'SEK' } };
-      }, 422, 'FX_RATE_SUSPENDED'],
-      ['stale rate', async () => {
-        await seedRate({ from: 'DKK', to: 'EUR', rate: '0.13', ageSeconds: 7 * 3600 });
-        return { programId: await seedProgram(), patch: { currency: 'DKK' } };
-      }, 422, 'FX_RATE_STALE'],
+      [
+        'suspended rate',
+        async () => {
+          await seedRate({ from: 'SEK', to: 'EUR', status: 'SUSPENDED' });
+          return { programId: await seedProgram(), patch: { currency: 'SEK' } };
+        },
+        422,
+        'FX_RATE_SUSPENDED',
+      ],
+      [
+        'stale rate',
+        async () => {
+          await seedRate({ from: 'DKK', to: 'EUR', rate: '0.13', ageSeconds: 7 * 3600 });
+          return { programId: await seedProgram(), patch: { currency: 'DKK' } };
+        },
+        422,
+        'FX_RATE_STALE',
+      ],
       ['insufficient capacity', async () => ({ programId: await seedProgram({ creditLimit: '50' }) }), 409, 'INSUFFICIENT_CAPACITY'],
     ])('%s', async (_, arrange, status, code) => {
       const { programId, patch } = await arrange();
@@ -241,13 +246,8 @@ describe('POST /v1/reservations', () => {
       const program = await programRow(programId);
       expect(program.reserved).toBe('0.0000');
 
-      const declines = await db().query(
-        'SELECT code, invoice_id, requested_amount, created_by FROM reservation_decline WHERE program_id = $1',
-        [program.id],
-      );
-      expect(declines.rows).toEqual([
-        { code, invoice_id: body.invoiceId, requested_amount: '100.0000', created_by: 'svc-origination' },
-      ]);
+      const declines = await db().query('SELECT code, invoice_id, requested_amount, created_by FROM reservation_decline WHERE program_id = $1', [program.id]);
+      expect(declines.rows).toEqual([{ code, invoice_id: body.invoiceId, requested_amount: '100.0000', created_by: 'svc-origination' }]);
 
       const outbox = await outboxFor(programId);
       expect(outbox.map((e) => e.type)).toEqual(['RESERVATION_DECLINED']);
@@ -291,9 +291,7 @@ describe('POST /v1/reservations', () => {
   describe('under concurrency', () => {
     it('never exceeds the limit', async () => {
       const programId = await seedProgram({ creditLimit: '60' });
-      const results = await Promise.all(
-        Array.from({ length: 100 }, () => reserve(request(programId, { amount: '1' }))),
-      );
+      const results = await Promise.all(Array.from({ length: 100 }, () => reserve(request(programId, { amount: '1' }))));
       const tally = results.reduce<Record<string, number>>((counts, r) => {
         const key = r.statusCode >= 400 ? `${r.statusCode} ${r.json().code}` : String(r.statusCode);
         return { ...counts, [key]: (counts[key] ?? 0) + 1 };
@@ -311,10 +309,7 @@ describe('POST /v1/reservations', () => {
       );
       expect(ledger.rows[0]).toEqual({ entries: 60, last: '60.0000', total: '60.0000' });
 
-      const declines = await db().query(
-        'SELECT count(*)::int AS n FROM reservation_decline WHERE program_id = $1',
-        [program.id],
-      );
+      const declines = await db().query('SELECT count(*)::int AS n FROM reservation_decline WHERE program_id = $1', [program.id]);
       expect(declines.rows[0].n).toBe(40);
     });
 
@@ -334,10 +329,7 @@ describe('POST /v1/reservations', () => {
       const programA = await seedProgram();
       const programB = await seedProgram();
       const invoiceId = unique('INV');
-      const [a, b] = await Promise.all([
-        reserve(request(programA, { invoiceId })),
-        reserve(request(programB, { invoiceId })),
-      ]);
+      const [a, b] = await Promise.all([reserve(request(programA, { invoiceId })), reserve(request(programB, { invoiceId }))]);
 
       expect([a.statusCode, b.statusCode].sort()).toEqual([201, 409]);
       const loser = a.statusCode === 409 ? a : b;
