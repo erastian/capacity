@@ -90,6 +90,16 @@ export class Env {
   @Min(1)
   CONSUMER_LAG_MAX_SECONDS = 5 * 60;
 
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  RECONCILIATION_BATCH_GRACE_SECONDS = 15 * 60;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(1000)
+  RECONCILIATION_BATCH_CHECK_INTERVAL_MS = 60_000;
+
   @Transform(({ value }) =>
     value === 'true' ? true : value === 'false' ? false : value,
   )

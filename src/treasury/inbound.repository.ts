@@ -4,6 +4,7 @@ import type { Numeric } from '../shared/db/db.types.js';
 import type { Tx } from '../shared/db/prisma.service.js';
 import type { FxRatePublished } from './adapter/commands.types.js';
 import type { Envelope } from './adapter/envelope.types.js';
+import type { BreakView } from './domain/break-closure.types.js';
 import type { StoredQuote } from './domain/fx-rate-decision.types.js';
 import type {
   InvoiceBreak,
@@ -23,6 +24,8 @@ import type {
 } from './domain/program-decision.types.js';
 import type {
   AwaitingKind,
+  BatchProgress,
+  BreakRow,
   FundingRow,
   FxRateRow,
   InboxRecord,
@@ -520,6 +523,129 @@ export class InboundRepository {
         ${program.reserved.toString()}::numeric, ${reservationId}::uuid, ${releaseId}::uuid, ${messageId}
       )
     `;
+  }
+
+  async findBreak(tx: Tx, breakId: string, program: ProgramView): Promise<BreakView | undefined> {
+    const rows = await tx.$queryRaw<BreakRow[]>`
+      SELECT id, reason::text AS reason, blocking, program_id, reservation_id, message_id, resolved_at, details
+      FROM program_break
+      WHERE id = ${breakId}::uuid
+        AND (program_id = ${program.id}::uuid OR (program_id IS NULL AND program_external_id = ${program.externalId}))
+    `;
+    const row = rows[0];
+    if (!row) return undefined;
+    const { essence, ...details } = row.details as { essence?: Record<string, string> };
+    return {
+      id: row.id,
+      reason: row.reason,
+      blocking: row.blocking,
+      programId: row.program_id,
+      reservationId: row.reservation_id,
+      messageId: row.message_id,
+      resolvedAt: row.resolved_at,
+      essence: essence ?? {},
+      details,
+    };
+  }
+
+  async laterMessageExists(tx: Tx, programId: string, openingMessageId: string, types: string[]): Promise<boolean> {
+    const rows = await tx.$queryRaw<{ exists: boolean }[]>`
+      SELECT EXISTS (
+        SELECT 1 FROM processed_message m
+        JOIN processed_message o ON o.message_id = ${openingMessageId}
+        WHERE m.program_id = ${programId}::uuid
+          AND m.type::text = ANY(${types}::text[])
+          AND m.outcome IN ('APPLIED', 'STALE')
+          AND m.topic = o.topic
+          AND (m.partition, m."offset") > (o.partition, o."offset")
+      ) AS exists
+    `;
+    return rows[0]?.exists ?? false;
+  }
+
+  async reversalApplied(tx: Tx, reservationId: string, externalRef: string): Promise<boolean> {
+    const rows = await tx.$queryRaw<{ exists: boolean }[]>`
+      SELECT EXISTS (
+        SELECT 1 FROM reservation_release rev
+        JOIN reservation_release t ON t.id = rev.reverses_release_id
+        WHERE t.reservation_id = ${reservationId}::uuid AND t.external_ref = ${externalRef}
+      ) AS exists
+    `;
+    return rows[0]?.exists ?? false;
+  }
+
+  async cancellationReversedAfter(tx: Tx, reservationId: string, openingMessageId: string): Promise<boolean> {
+    const rows = await tx.$queryRaw<{ exists: boolean }[]>`
+      SELECT EXISTS (
+        SELECT 1 FROM reservation_release rev
+        JOIN reservation_release t ON t.id = rev.reverses_release_id
+        JOIN processed_message m ON m.message_id = rev.message_id
+        JOIN processed_message o ON o.message_id = ${openingMessageId}
+        WHERE t.reservation_id = ${reservationId}::uuid
+          AND t.reason = 'CANCELLATION'
+          AND m.topic = o.topic
+          AND (m.partition, m."offset") > (o.partition, o."offset")
+      ) AS exists
+    `;
+    return rows[0]?.exists ?? false;
+  }
+
+  async closeBreak(tx: Tx, view: BreakView, messageId: string): Promise<void> {
+    const closed = await tx.$executeRaw`
+      UPDATE program_break SET resolved_at = now(), resolution_message_id = ${messageId}
+      WHERE id = ${view.id}::uuid AND resolved_at IS NULL
+    `;
+    if (closed === 1 && view.blocking && view.programId !== null) {
+      await tx.$executeRaw`
+        UPDATE program SET open_blocking_breaks = open_blocking_breaks - 1, updated_at = now()
+        WHERE id = ${view.programId}::uuid
+      `;
+    }
+  }
+
+  async findBatch(tx: Tx, batchId: string): Promise<{ programCount: number } | undefined> {
+    const rows = await tx.$queryRaw<{ program_count: number }[]>`
+      SELECT program_count FROM reconciliation_batch WHERE batch_id = ${batchId}
+    `;
+    return rows[0] && { programCount: rows[0].program_count };
+  }
+
+  async insertBatch(tx: Tx, batchId: string, programCount: number, messageId: string, deadlineAt: Date): Promise<void> {
+    await tx.$executeRaw`
+      INSERT INTO reconciliation_batch (batch_id, program_count, completed_message_id, deadline_at)
+      VALUES (${batchId}, ${programCount}, ${messageId}, ${deadlineAt})
+    `;
+  }
+
+  async completeBatch(tx: Tx, batchId: string): Promise<BatchProgress | undefined> {
+    const rows = await tx.$queryRaw<{ batch_id: string; program_count: number; received: number; alerted_at: Date | null }[]>`
+      UPDATE reconciliation_batch b SET completed_at = now()
+      FROM (
+        SELECT count(DISTINCT program_external_id)::int AS received FROM processed_message
+        WHERE batch_id = ${batchId} AND type = 'PROGRAM_SNAPSHOT'
+      ) s
+      WHERE b.batch_id = ${batchId} AND b.completed_at IS NULL AND s.received >= b.program_count
+      RETURNING b.batch_id, b.program_count, s.received, b.alerted_at
+    `;
+    const row = rows[0];
+    return row && { batchId: row.batch_id, programCount: row.program_count, received: row.received, alertedAt: row.alerted_at };
+  }
+
+  async flagOverdueBatches(tx: Tx): Promise<BatchProgress[]> {
+    const rows = await tx.$queryRaw<{ batch_id: string; program_count: number; received: number; alerted_at: Date }[]>`
+      UPDATE reconciliation_batch b SET alerted_at = now()
+      WHERE b.completed_at IS NULL AND b.alerted_at IS NULL AND b.deadline_at < now()
+      RETURNING b.batch_id, b.program_count, b.alerted_at, (
+        SELECT count(DISTINCT m.program_external_id)::int FROM processed_message m
+        WHERE m.batch_id = b.batch_id AND m.type = 'PROGRAM_SNAPSHOT'
+      ) AS received
+    `;
+    return rows.map((row) => ({
+      batchId: row.batch_id,
+      programCount: row.program_count,
+      received: row.received,
+      alertedAt: row.alerted_at,
+    }));
   }
 
   async openBreak(

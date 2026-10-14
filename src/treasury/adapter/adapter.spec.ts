@@ -119,6 +119,51 @@ describe('toCommand', () => {
     });
   });
 
+  describe('break and batch messages', () => {
+    const BREAK = '7f1c0a52-3b9e-4c1d-9a0e-2f6b8d4e5a10';
+
+    it('builds BREAK_RESOLVED with a normalised break id', () => {
+      expect(toCommand(parse(envelope({ type: 'BREAK_RESOLVED', version: undefined, payload: { breakId: BREAK.toUpperCase() } })))).toEqual({
+        kind: 'command',
+        command: { type: 'BREAK_RESOLVED', programId: 'P1', breakId: BREAK },
+      });
+    });
+
+    it('builds RECONCILIATION_BATCH_COMPLETED from the envelope batch id', () => {
+      const value = envelope({ type: 'RECONCILIATION_BATCH_COMPLETED', programId: undefined, version: undefined, batchId: 'B-1', payload: { programCount: 3 } });
+      expect(toCommand(parse(value))).toEqual({
+        kind: 'command',
+        command: { type: 'RECONCILIATION_BATCH_COMPLETED', batchId: 'B-1', programCount: 3 },
+      });
+    });
+
+    it.each<[string, Record<string, unknown>]>([
+      ['a break id that is not ours', { type: 'BREAK_RESOLVED', payload: { breakId: 'BRK-1' } }],
+      ['a batch without batchId', { type: 'RECONCILIATION_BATCH_COMPLETED', payload: { programCount: 3 } }],
+      ['a zero programCount', { type: 'RECONCILIATION_BATCH_COMPLETED', batchId: 'B-1', payload: { programCount: 0 } }],
+      ['a fractional programCount', { type: 'RECONCILIATION_BATCH_COMPLETED', batchId: 'B-1', payload: { programCount: 1.5 } }],
+      ['a programCount as text', { type: 'RECONCILIATION_BATCH_COMPLETED', batchId: 'B-1', payload: { programCount: '3' } }],
+    ])('rejects %s', (_, patch) => {
+      expect(toCommand(parse(envelope({ version: undefined, ...patch }))).kind).toBe('invalid');
+    });
+
+    it('rejects a snapshot listing something other than break ids', () => {
+      const value = envelope({
+        type: 'PROGRAM_SNAPSHOT',
+        version: undefined,
+        payload: {
+          currency: 'EUR',
+          clientRef: 'C-ACME',
+          creditLimit: { amount: '1000', currency: 'EUR', version: 3 },
+          externalUtilized: { amount: '0', currency: 'EUR', version: 1 },
+          status: { value: 'ACTIVE', version: 1 },
+          resolvedBreaks: [BREAK, 'BRK-2'],
+        },
+      });
+      expect(toCommand(parse(value))).toMatchObject({ kind: 'invalid', reason: 'resolvedBreaks[1] must be a break id' });
+    });
+  });
+
   describe('invoice messages', () => {
     const invoice = (type: string, payload: Record<string, unknown>) =>
       envelope({ type, version: undefined, payload: { invoiceId: 'INV-1', ...payload } });

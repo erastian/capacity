@@ -15,6 +15,8 @@ export class InboundMetrics {
   private readonly outcomes: Counter;
   private readonly deadLetters: Counter;
   private readonly duplicates: Counter;
+  private readonly alerts: Counter;
+  private readonly snapshotBreaks: Counter;
 
   constructor(metrics: MetricsServer, config: ConfigService<Env, true>) {
     this.clockSkewToleranceMs = config.get('CLOCK_SKEW_TOLERANCE_SECONDS', { infer: true }) * 1000;
@@ -50,6 +52,27 @@ export class InboundMetrics {
       labelNames: ['outcome'],
       registers,
     });
+    this.alerts = new Counter({
+      name: 'treasury_alerts_total',
+      help: 'Operational alerts raised while processing treasury data',
+      labelNames: ['alert'],
+      registers,
+    });
+    this.snapshotBreaks = new Counter({
+      name: 'treasury_snapshot_break_resolutions_total',
+      help: 'Breaks listed in resolvedBreaks of a snapshot, by result',
+      labelNames: ['result'],
+      registers,
+    });
+  }
+
+  alert(alert: string, message: string): void {
+    this.alerts.inc({ alert });
+    this.logger.error(`${alert}: ${message}`);
+  }
+
+  snapshotBreak(result: string): void {
+    this.snapshotBreaks.inc({ result });
   }
 
   received(topic: string, brokerTimestamp: Date, readAt: Date): void {

@@ -9,10 +9,19 @@ import { minorUnits } from '../shared/money/currency.js';
 import { CAPACITY_SCALE, formatAmount } from '../shared/money/money.js';
 import { Clock } from '../shared/time/clock.js';
 import { isInvoiceCommand, toCommand } from './adapter/commands.js';
-import type { FxRatePublished, InvoiceCommand, ProgramCommand } from './adapter/commands.types.js';
+import type {
+  BreakResolved,
+  FxRatePublished,
+  InvoiceCommand,
+  ProgramCommand,
+  ProgramSnapshot,
+  ReconciliationBatchCompleted,
+} from './adapter/commands.types.js';
 import { parseEnvelope } from './adapter/envelope.js';
 import type { RawMessage } from './adapter/envelope.types.js';
 import { DeadLetterPublisher } from './dead-letter.js';
+import { closureCondition, versionAbove } from './domain/break-closure.js';
+import type { BreakView } from './domain/break-closure.types.js';
 import { decideFxRate } from './domain/fx-rate-decision.js';
 import { decideInvoiceCommand } from './domain/invoice-decision.js';
 import type {
@@ -27,6 +36,7 @@ import type { Balances, BreakSpec, ProgramPlan, ProgramView } from './domain/pro
 import { InboundMetrics } from './inbound.metrics.js';
 import { InboundRepository, KNOWN_TYPES } from './inbound.repository.js';
 import type { AwaitingKind, Decision, ProcessingContext as Context } from './inbound.types.js';
+import { ReconciliationBatches } from './reconciliation-batches.js';
 import { writeStatus } from './status.writer.js';
 
 const ZERO_BALANCES = (program: ProgramView): Balances => ({
@@ -44,6 +54,9 @@ const balancesOf = (program: ProgramView): Balances => ({
 const effectiveAsOf = ({ envelope, coordinates }: Context): Date =>
   envelope.asOf < coordinates.timestamp ? envelope.asOf : coordinates.timestamp;
 
+const snapshotBatch = (type: string, batchId: string | undefined): Pick<Decision, 'batch'> =>
+  type === 'PROGRAM_SNAPSHOT' && batchId ? { batch: batchId } : {};
+
 const RELEASE_EVENTS: Record<ReleaseReason, OutboundEventType> = {
   REPAYMENT: 'RESERVATION_RELEASED',
   WRITE_OFF: 'RESERVATION_RELEASED',
@@ -55,16 +68,19 @@ const RELEASE_EVENTS: Record<ReleaseReason, OutboundEventType> = {
 export class InboundProcessor {
   private readonly logger = new Logger(InboundProcessor.name);
   private readonly publishAccepted: boolean;
+  private readonly batchGraceMs: number;
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly repository: InboundRepository,
     private readonly metrics: InboundMetrics,
     private readonly deadLetters: DeadLetterPublisher,
+    private readonly batches: ReconciliationBatches,
     private readonly clock: Clock,
     config: ConfigService<Env, true>,
   ) {
     this.publishAccepted = config.get('PUBLISH_ACCEPTED_STATUS', { infer: true });
+    this.batchGraceMs = config.get('RECONCILIATION_BATCH_GRACE_SECONDS', { infer: true }) * 1000;
   }
 
   async process(raw: RawMessage): Promise<void> {
@@ -93,6 +109,7 @@ export class InboundProcessor {
       await this.deadLetters.send(raw, decision.deadLetter);
       this.metrics.deadLettered(decision.deadLetter);
     }
+    if (decision.batch) await this.batches.complete(decision.batch);
     if (decision.wake) await this.resolveParked(decision.wake);
     if (decision.wakeRate) await this.resolveAwaitingRate(decision.wakeRate);
   }
@@ -104,22 +121,23 @@ export class InboundProcessor {
 
   async resolveParked(programExternalId: string): Promise<void> {
     for (;;) {
-      const progressed = await this.prisma.inTransaction(async (tx) => {
+      const decision = await this.prisma.inTransaction(async (tx) => {
         const program = await this.repository.lockProgram(tx, programExternalId);
-        if (!program) return false;
+        if (!program) return undefined;
         const parked = await this.repository.nextResolvableParked(tx, programExternalId);
-        if (!parked) return false;
+        if (!parked) return undefined;
 
-        const decision = await this.decide(tx, {
+        const resolved = await this.decide(tx, {
           envelope: parked.envelope,
           coordinates: parked.coordinates,
           partitionKey: programExternalId,
           fromParked: true,
         });
-        if (!decision.parked) await this.repository.markResolved(tx, parked.messageId);
-        return true;
+        if (!resolved.parked) await this.repository.markResolved(tx, parked.messageId);
+        return resolved;
       });
-      if (!progressed) return;
+      if (!decision) return;
+      if (decision.batch) await this.batches.complete(decision.batch);
     }
   }
 
@@ -151,11 +169,12 @@ export class InboundProcessor {
       await this.status(tx, context, program, 'RJCT', { reason });
       this.metrics.decided(envelope.type, 'REJECTED');
       if (result.kind === 'invalid') this.logger.warn(`${envelope.messageId}: ${result.reason}`);
-      return { deadLetter: reason };
+      return { deadLetter: reason, ...snapshotBatch(envelope.type, envelope.batchId) };
     }
 
     const command = result.command;
     if (command.type === 'FX_RATE_PUBLISHED') return this.applyRate(tx, context, command);
+    if (command.type === 'RECONCILIATION_BATCH_COMPLETED') return this.applyBatch(tx, context, command);
 
     const creating = !program && command.type === 'PROGRAM_SNAPSHOT';
     const reservation =
@@ -168,7 +187,136 @@ export class InboundProcessor {
     if (!program && !creating) return this.park(tx, context, command, program, null, 'PROGRAM', command.programId);
 
     if (isInvoiceCommand(command)) return this.applyInvoice(tx, context, command, program!, reservation);
-    return this.apply(tx, context, command, program, decideProgramCommand(command, program));
+    if (command.type === 'BREAK_RESOLVED') return this.applyBreakResolution(tx, context, command, program!);
+    const decision = await this.apply(tx, context, command, program, decideProgramCommand(command, program));
+    return { ...decision, ...snapshotBatch(command.type, envelope.batchId) };
+  }
+
+  private async applyBatch(tx: Tx, context: Context, command: ReconciliationBatchCompleted): Promise<Decision> {
+    const { envelope, coordinates } = context;
+    const existing = await this.repository.findBatch(tx, command.batchId);
+    const outcome = !existing ? 'APPLIED' : existing.programCount === command.programCount ? 'STALE' : 'REJECTED';
+    const reason = outcome === 'REJECTED' ? 'BATCH_CONFLICT' : null;
+    this.metrics.decided(command.type, outcome);
+
+    await this.repository.insertInbox(tx, envelope, coordinates, {
+      type: command.type,
+      outcome,
+      reason,
+      programId: null,
+      programExternalId: null,
+    });
+    if (outcome === 'REJECTED') {
+      this.logger.warn(
+        `BATCH_CONFLICT: batch ${command.batchId} announced ${command.programCount} programs, earlier ${existing!.programCount}`,
+      );
+      await this.status(tx, context, undefined, 'RJCT', { reason });
+      return {};
+    }
+    if (outcome === 'APPLIED') {
+      const deadlineAt = new Date(coordinates.timestamp.getTime() + this.batchGraceMs);
+      await this.repository.insertBatch(tx, command.batchId, command.programCount, envelope.messageId, deadlineAt);
+    }
+    await this.status(tx, context, undefined, 'ACCP');
+    return { batch: command.batchId };
+  }
+
+  private async applyBreakResolution(
+    tx: Tx,
+    context: Context,
+    command: BreakResolved,
+    program: ProgramView,
+  ): Promise<Decision> {
+    const { envelope, coordinates } = context;
+    const found = await this.repository.findBreak(tx, command.breakId, program);
+    const reason = !found
+      ? 'UNKNOWN_BREAK'
+      : found.resolvedAt
+        ? null
+        : (await this.closable(tx, found, program))
+          ? null
+          : 'BREAK_NOT_RESOLVED';
+    const outcome = reason ? 'REJECTED' : found!.resolvedAt ? 'STALE' : 'APPLIED';
+    this.metrics.decided(command.type, outcome);
+
+    await this.repository.insertInbox(tx, envelope, coordinates, {
+      type: command.type,
+      outcome,
+      reason,
+      programId: program.id,
+      programExternalId: command.programId,
+    });
+    if (outcome === 'APPLIED') await this.closeBreak(tx, found!, program, envelope.messageId);
+
+    const references = { breakId: command.breakId };
+    if (reason) {
+      await this.status(tx, context, program, 'RJCT', { reason, references });
+    } else {
+      await this.status(tx, context, program, 'ACCP', { references });
+    }
+    return {};
+  }
+
+  private async resolveListedBreaks(
+    tx: Tx,
+    snapshot: ProgramSnapshot,
+    program: ProgramView,
+    messageId: string,
+  ): Promise<void> {
+    for (const breakId of snapshot.resolvedBreaks) {
+      const found = await this.repository.findBreak(tx, breakId, program);
+      const result = !found
+        ? 'UNKNOWN_BREAK'
+        : found.resolvedAt
+          ? 'ALREADY_RESOLVED'
+          : (await this.closable(tx, found, program))
+            ? 'RESOLVED'
+            : 'BREAK_NOT_RESOLVED';
+      this.metrics.snapshotBreak(result);
+      if (result === 'RESOLVED') {
+        await this.closeBreak(tx, found!, program, messageId);
+      } else if (result !== 'ALREADY_RESOLVED') {
+        this.logger.warn(`${result}: snapshot ${messageId} lists break ${breakId} of program ${program.externalId}`);
+      }
+    }
+  }
+
+  private async closable(tx: Tx, view: BreakView, program: ProgramView): Promise<boolean> {
+    const condition = closureCondition(view);
+    switch (condition.kind) {
+      case 'NONE':
+        return true;
+      case 'UNSATISFIABLE':
+        this.logger.error(`Break ${view.id} (${view.reason}) lacks the data to check its resolution`);
+        return false;
+      case 'LATER_MESSAGE':
+        return this.repository.laterMessageExists(tx, program.id, view.messageId, condition.types);
+      case 'VERSION_ABOVE':
+        return versionAbove(program, condition.field, condition.version);
+      case 'REVERSAL_APPLIED':
+        return this.repository.reversalApplied(tx, condition.reservationId, condition.externalRef);
+      case 'CANCELLATION_REVERSED':
+        return this.repository.cancellationReversedAfter(tx, condition.reservationId, view.messageId);
+    }
+  }
+
+  private async closeBreak(tx: Tx, view: BreakView, program: ProgramView, messageId: string): Promise<void> {
+    await this.repository.closeBreak(tx, view, messageId);
+    await writeOutbox(tx, {
+      type: 'PROGRAM_BREAK_RESOLVED',
+      programId: program.id,
+      partitionKey: program.externalId,
+      correlationId: messageId,
+      occurredAt: this.clock.now(),
+      data: {
+        breakId: view.id,
+        programId: program.externalId,
+        reservationId: view.reservationId,
+        reason: view.reason,
+        blocking: view.blocking,
+        resolutionMessageId: messageId,
+      },
+    });
   }
 
   private async applyInvoice(
@@ -399,7 +547,7 @@ export class InboundProcessor {
   private async park(
     tx: Tx,
     context: Context,
-    command: ProgramCommand | InvoiceCommand,
+    command: ProgramCommand | InvoiceCommand | BreakResolved,
     program: ProgramView | undefined,
     reservationId: string | null,
     awaitingKind: AwaitingKind,
@@ -455,6 +603,7 @@ export class InboundProcessor {
     if (plan.outcome === 'STALE') {
       await inbox('STALE', program!.id);
       await this.repository.touchSyncedAt(tx, program!.id, asOf);
+      if (command.type === 'PROGRAM_SNAPSHOT') await this.resolveListedBreaks(tx, command, program!, envelope.messageId);
       await this.status(tx, context, program, 'ACCP');
       return {};
     }
@@ -475,6 +624,7 @@ export class InboundProcessor {
       envelope.messageId,
     );
     await this.limitExcess(tx, after, before, envelope.messageId);
+    if (command.type === 'PROGRAM_SNAPSHOT') await this.resolveListedBreaks(tx, command, after, envelope.messageId);
     await this.status(tx, context, after, 'ACCP');
     return 'create' in plan ? { wake: command.programId } : {};
   }

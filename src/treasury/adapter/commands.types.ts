@@ -132,7 +132,24 @@ export type InvoiceCommand =
   | InvoiceFundingCancelled
   | InvoiceReleaseReversed;
 
-export type Command = ProgramCommand | InvoiceCommand | FxRatePublished;
+export interface BreakResolved {
+  type: 'BREAK_RESOLVED';
+  programId: string;
+  breakId: string;
+}
+
+export interface ReconciliationBatchCompleted {
+  type: 'RECONCILIATION_BATCH_COMPLETED';
+  batchId: string;
+  programCount: number;
+}
+
+export type Command =
+  | ProgramCommand
+  | InvoiceCommand
+  | BreakResolved
+  | FxRatePublished
+  | ReconciliationBatchCompleted;
 
 export type CommandResult =
   | { kind: 'command'; command: Command }

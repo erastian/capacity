@@ -18,6 +18,7 @@ export const SUPPORTED_SCHEMA_VERSION = 1;
 
 const AMOUNT = /^(0|[1-9]\d{0,15})(\.\d{1,4})?$/;
 const RATE = /^(0|[1-9]\d{0,19})(\.\d{1,18})?$/;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const STATUSES: readonly ProgramStatus[] = ['ACTIVE', 'SUSPENDED', 'CLOSED'];
 const RATE_TYPES: readonly FxRateType[] = ['VALUATION', 'CONVERSION'];
 const RATE_STATUSES: readonly FxRateStatus[] = ['ACTIVE', 'SUSPENDED'];
@@ -113,6 +114,11 @@ function fxRate(envelope: Envelope): Command {
   };
 }
 
+function breakId(value: unknown, field: string): string {
+  if (typeof value !== 'string' || !UUID.test(value)) fail(`${field} must be a break id`);
+  return value.toLowerCase();
+}
+
 function identifier(value: unknown, field: string): string {
   if (!isIdentifier(value)) fail(`${field} is missing or invalid`);
   return value;
@@ -191,10 +197,26 @@ function build(envelope: Envelope): Command | undefined {
         reversalId: identifier(payload.reversalId, 'reversalId'),
         externalRef: identifier(payload.externalRef, 'externalRef'),
       };
+    case 'BREAK_RESOLVED':
+      return {
+        type: 'BREAK_RESOLVED',
+        programId: programId(envelope),
+        breakId: breakId(payload.breakId, 'breakId'),
+      };
+    case 'RECONCILIATION_BATCH_COMPLETED': {
+      const count = payload.programCount;
+      if (!Number.isSafeInteger(count) || (count as number) < 1) fail('programCount must be a positive integer');
+      return {
+        type: 'RECONCILIATION_BATCH_COMPLETED',
+        batchId: envelope.batchId ?? fail('batchId is missing or invalid'),
+        programCount: count as number,
+      };
+    }
     case 'PROGRAM_SNAPSHOT': {
       const statusField = object(payload.status, 'status');
       const resolved = payload.resolvedBreaks ?? [];
-      if (!Array.isArray(resolved) || !resolved.every(isIdentifier)) fail('resolvedBreaks must be a list of identifiers');
+      if (!Array.isArray(resolved)) fail('resolvedBreaks must be a list of break ids');
+      const resolvedBreaks = resolved.map((id, index) => breakId(id, `resolvedBreaks[${index}]`));
       return {
         type: 'PROGRAM_SNAPSHOT',
         programId: programId(envelope),
@@ -207,7 +229,7 @@ function build(envelope: Envelope): Command | undefined {
           reason: optionalText(statusField.reason, 'status.reason'),
           version: version(statusField.version, 'status.version'),
         },
-        resolvedBreaks: resolved,
+        resolvedBreaks,
       };
     }
     case 'LIMIT_UPDATED':

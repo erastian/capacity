@@ -1,6 +1,7 @@
 import type { Numeric } from '../shared/db/db.types.js';
 import type { ProgramStatus } from '../shared/domain/program.types.js';
 import type { Envelope } from './adapter/envelope.types.js';
+import type { AnyBreakReason } from './domain/break-closure.types.js';
 import type { ReleaseReason, ReservationStatus } from './domain/invoice-decision.types.js';
 
 export type Outcome = 'APPLIED' | 'STALE' | 'REJECTED';
@@ -63,6 +64,7 @@ export interface Decision {
   wake?: string;
   wakeRate?: string;
   parked?: boolean;
+  batch?: string;
 }
 
 export interface FxRateRow {
@@ -108,6 +110,24 @@ export interface ReleaseRow {
 export interface FundingRow {
   reservation_id: string;
   returned: boolean;
+}
+
+export interface BreakRow {
+  id: string;
+  reason: AnyBreakReason;
+  blocking: boolean;
+  program_id: string | null;
+  reservation_id: string | null;
+  message_id: string;
+  resolved_at: Date | null;
+  details: Record<string, unknown>;
+}
+
+export interface BatchProgress {
+  batchId: string;
+  programCount: number;
+  received: number;
+  alertedAt: Date | null;
 }
 
 export interface ProcessingContext {
