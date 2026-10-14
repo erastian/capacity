@@ -307,6 +307,7 @@ model ProcessedMessage {
   @@index([batchId, programExternalId])
   @@index([programId, processedAt])
   @@index([programExternalId])
+  @@index([programExternalId, processedAt(sort: Desc), messageId(sort: Desc)])
   @@map("processed_message")
 }
 

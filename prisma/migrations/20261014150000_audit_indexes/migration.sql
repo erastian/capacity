@@ -1,0 +1,1 @@
+CREATE INDEX "processed_message_program_external_id_processed_at_message_id_idx" ON "processed_message"("program_external_id", "processed_at" DESC, "message_id" DESC);

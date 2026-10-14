@@ -10,7 +10,7 @@ import {
   Min,
   validateSync,
 } from 'class-validator';
-import { BooleanFlag } from './boolean-flag.js';
+import { BooleanFlag } from '../shared/validation/boolean-flag.js';
 
 export const NODE_ENVS = ['development', 'test', 'production'] as const;
 export const LOG_LEVELS = [

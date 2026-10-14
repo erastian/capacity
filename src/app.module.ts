@@ -7,6 +7,7 @@ import { validateEnv, type Env } from './config/env.js';
 import { HealthModule } from './health/health.module.js';
 import { MetricsModule } from './metrics/metrics.module.js';
 import { OutboxModule } from './outbox/outbox.module.js';
+import { AuditModule } from './audit/audit.module.js';
 import { ProgramsModule } from './programs/programs.module.js';
 import { RatesModule } from './rates/rates.module.js';
 import { ReservationsModule } from './reservations/reservations.module.js';
@@ -76,6 +77,7 @@ import { ProblemFilter } from './shared/errors/problem.filter.js';
     ProgramsModule,
     ReservationsModule,
     RatesModule,
+    AuditModule,
     OutboxModule,
     TreasuryModule,
   ],
