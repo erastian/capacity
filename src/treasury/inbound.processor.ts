@@ -1,21 +1,32 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { Decimal } from 'decimal.js';
 import type { Env } from '../config/env.js';
+import type { OutboundEventType } from '../outbox/outbox.types.js';
 import { writeOutbox } from '../outbox/outbox.writer.js';
 import { type Tx, PrismaService } from '../shared/db/prisma.service.js';
+import { minorUnits } from '../shared/money/currency.js';
 import { CAPACITY_SCALE, formatAmount } from '../shared/money/money.js';
 import { Clock } from '../shared/time/clock.js';
-import { toCommand } from './adapter/commands.js';
-import type { FxRatePublished, ProgramCommand } from './adapter/commands.types.js';
+import { isInvoiceCommand, toCommand } from './adapter/commands.js';
+import type { FxRatePublished, InvoiceCommand, ProgramCommand } from './adapter/commands.types.js';
 import { parseEnvelope } from './adapter/envelope.js';
 import type { RawMessage } from './adapter/envelope.types.js';
 import { DeadLetterPublisher } from './dead-letter.js';
 import { decideFxRate } from './domain/fx-rate-decision.js';
+import { decideInvoiceCommand } from './domain/invoice-decision.js';
+import type {
+  InvoiceBreak,
+  InvoiceEffect,
+  InvoiceFacts,
+  ReleaseReason,
+  ReservationView,
+} from './domain/invoice-decision.types.js';
 import { decideProgramCommand, overLimit } from './domain/program-decision.js';
-import type { Balances, ProgramPlan, ProgramView } from './domain/program-decision.types.js';
+import type { Balances, BreakSpec, ProgramPlan, ProgramView } from './domain/program-decision.types.js';
 import { InboundMetrics } from './inbound.metrics.js';
 import { InboundRepository, KNOWN_TYPES } from './inbound.repository.js';
-import type { Decision, ProcessingContext as Context } from './inbound.types.js';
+import type { AwaitingKind, Decision, ProcessingContext as Context } from './inbound.types.js';
 import { writeStatus } from './status.writer.js';
 
 const ZERO_BALANCES = (program: ProgramView): Balances => ({
@@ -29,6 +40,16 @@ const balancesOf = (program: ProgramView): Balances => ({
   externalUtilized: program.externalUtilized,
   reserved: program.reserved,
 });
+
+const effectiveAsOf = ({ envelope, coordinates }: Context): Date =>
+  envelope.asOf < coordinates.timestamp ? envelope.asOf : coordinates.timestamp;
+
+const RELEASE_EVENTS: Record<ReleaseReason, OutboundEventType> = {
+  REPAYMENT: 'RESERVATION_RELEASED',
+  WRITE_OFF: 'RESERVATION_RELEASED',
+  CANCELLATION: 'RESERVATION_CANCELLED',
+  REVERSAL: 'RESERVATION_RELEASE_REVERSED',
+};
 
 @Injectable()
 export class InboundProcessor {
@@ -86,19 +107,16 @@ export class InboundProcessor {
       const progressed = await this.prisma.inTransaction(async (tx) => {
         const program = await this.repository.lockProgram(tx, programExternalId);
         if (!program) return false;
-        const parked = await this.repository.nextUnresolvedParked(tx, programExternalId);
+        const parked = await this.repository.nextResolvableParked(tx, programExternalId);
         if (!parked) return false;
-        if (parked.awaitingKind === 'FX_RATE' && !(await this.repository.quoteExists(tx, parked.awaitingRef))) {
-          return false;
-        }
 
-        await this.decide(tx, {
+        const decision = await this.decide(tx, {
           envelope: parked.envelope,
           coordinates: parked.coordinates,
           partitionKey: programExternalId,
           fromParked: true,
         });
-        await this.repository.markResolved(tx, parked.messageId);
+        if (!decision.parked) await this.repository.markResolved(tx, parked.messageId);
         return true;
       });
       if (!progressed) return;
@@ -140,13 +158,182 @@ export class InboundProcessor {
     if (command.type === 'FX_RATE_PUBLISHED') return this.applyRate(tx, context, command);
 
     const creating = !program && command.type === 'PROGRAM_SNAPSHOT';
+    const reservation =
+      program && isInvoiceCommand(command) ? await this.repository.findReservation(tx, command.invoiceId) : undefined;
+    const queue = reservation && reservation.programId === program?.id ? reservation.id : null;
     if (!context.fromParked && !creating) {
-      const predecessor = await this.repository.lastUnresolvedParked(tx, command.programId);
-      if (predecessor) return this.park(tx, context, command, program, 'PRECEDING_MESSAGE', predecessor);
+      const predecessor = await this.repository.lastUnresolvedParked(tx, command.programId, queue);
+      if (predecessor) return this.park(tx, context, command, program, queue, 'PRECEDING_MESSAGE', predecessor);
     }
-    if (!program && !creating) return this.park(tx, context, command, program, 'PROGRAM', command.programId);
+    if (!program && !creating) return this.park(tx, context, command, program, null, 'PROGRAM', command.programId);
 
+    if (isInvoiceCommand(command)) return this.applyInvoice(tx, context, command, program!, reservation);
     return this.apply(tx, context, command, program, decideProgramCommand(command, program));
+  }
+
+  private async applyInvoice(
+    tx: Tx,
+    context: Context,
+    command: InvoiceCommand,
+    program: ProgramView,
+    found: ReservationView | undefined,
+  ): Promise<Decision> {
+    const { envelope, coordinates } = context;
+    const own = found && found.programId === program.id ? await this.repository.lockReservation(tx, found.id) : undefined;
+    const reservation = own ?? found;
+    const facts = own ? await this.invoiceFacts(tx, command, own) : {};
+    const plan = decideInvoiceCommand(command, program.id, reservation, facts);
+
+    if (plan.outcome === 'AWAIT_RATE') {
+      return this.park(tx, context, command, program, own!.id, 'FX_RATE', plan.rateId);
+    }
+    this.metrics.decided(command.type, plan.outcome);
+
+    const references: Record<string, string> = reservation ? { reservationId: reservation.id } : {};
+    const inbox = (outcome: 'APPLIED' | 'STALE' | 'REJECTED', reason: string | null = null) =>
+      this.repository.insertInbox(tx, envelope, coordinates, {
+        type: command.type,
+        outcome,
+        reason,
+        programId: program.id,
+        programExternalId: command.programId,
+      });
+
+    if (plan.outcome === 'REJECTED') {
+      await inbox('REJECTED', plan.reason);
+      if (plan.break) {
+        const target =
+          plan.break.reason === 'PROGRAM_MISMATCH'
+            ? await this.repository.lockProgram(tx, reservation!.programExternalId)
+            : program;
+        references.breakId = await this.openBreak(tx, plan.break, target!, target!.externalId, envelope.messageId);
+      }
+      await this.status(tx, context, program, 'RJCT', { reason: plan.reason, references });
+      return {};
+    }
+
+    if (plan.outcome === 'STALE') {
+      await inbox('STALE');
+      await this.status(tx, context, program, 'ACCP', { references });
+      return {};
+    }
+
+    await inbox('APPLIED');
+    const effect = plan.effect;
+    if (effect.kind === 'FUND') {
+      await this.repository.fund(tx, own!.id, effect.fundingRef, effectiveAsOf(context), envelope.messageId);
+    } else if (effect.kind === 'RETURN_FUNDING') {
+      await this.repository.returnFunding(tx, own!.id, effect.fundingRef, effectiveAsOf(context), envelope.messageId);
+    } else {
+      references.releaseId = await this.release(tx, context, program, own!, effect);
+    }
+    await this.status(tx, context, program, 'ACCP', { references });
+    return {};
+  }
+
+  private async invoiceFacts(tx: Tx, command: InvoiceCommand, reservation: ReservationView): Promise<InvoiceFacts> {
+    const release = (externalRef: string) => this.repository.findRelease(tx, reservation.id, externalRef);
+    switch (command.type) {
+      case 'INVOICE_FUNDED':
+      case 'INVOICE_FUNDING_RETURNED':
+        return { funding: await this.repository.findFunding(tx, command.fundingRef) };
+      case 'INVOICE_PAYMENT_ALLOCATED':
+        return {
+          sameRef: await release(command.allocationId),
+          quote: command.fxRateId ? await this.repository.findQuoteByRateId(tx, command.fxRateId) : undefined,
+        };
+      case 'INVOICE_BALANCE_WRITTEN_OFF':
+        return { sameRef: await release(command.writeOffId) };
+      case 'INVOICE_FUNDING_CANCELLED':
+        return { sameRef: await release(command.cancellationId) };
+      case 'INVOICE_RELEASE_REVERSED':
+        return { sameRef: await release(command.reversalId), target: await release(command.externalRef) };
+    }
+  }
+
+  private async release(
+    tx: Tx,
+    context: Context,
+    program: ProgramView,
+    reservation: ReservationView,
+    effect: Extract<InvoiceEffect, { kind: 'RELEASE' }>,
+  ): Promise<string> {
+    const { envelope } = context;
+    const { release: row, balances, reservedDelta } = effect;
+    const releaseId = await this.repository.insertRelease(tx, reservation.id, row, envelope.messageId);
+    await this.repository.rebalanceReservation(tx, reservation, balances);
+    const after = await this.repository.addReserved(tx, program.id, reservedDelta);
+    await this.repository.insertReleaseLedger(
+      tx,
+      after,
+      reservation.id,
+      releaseId,
+      row.reason === 'REVERSAL',
+      reservedDelta,
+      envelope.messageId,
+    );
+
+    const invoiceScale = minorUnits(reservation.originalCurrency);
+    const capacity = (value: Decimal) => formatAmount(value, CAPACITY_SCALE);
+    const available = Decimal.max(0, after.creditLimit.minus(after.externalUtilized).minus(after.reserved));
+    await writeOutbox(tx, {
+      type: RELEASE_EVENTS[row.reason],
+      programId: program.id,
+      partitionKey: program.externalId,
+      correlationId: envelope.messageId,
+      occurredAt: this.clock.now(),
+      data: {
+        reservationId: reservation.id,
+        invoiceId: reservation.invoiceId,
+        programId: program.externalId,
+        releaseId,
+        externalRef: row.externalRef,
+        reason: row.reason,
+        reversesReleaseId: row.reversesReleaseId,
+        cancellationReason: row.cancellationReason,
+        writeOffReason: row.writeOffReason,
+        originalAmount: formatAmount(row.originalAmount, invoiceScale),
+        originalCurrency: reservation.originalCurrency,
+        amount: capacity(row.amount),
+        currency: program.currency,
+        status: balances.status,
+        outstanding: formatAmount(reservation.originalAmount.minus(balances.releasedOriginalAmount), invoiceScale),
+        capacityOutstanding: capacity(reservation.amount.minus(balances.releasedAmount)),
+        reservedAfter: capacity(after.reserved),
+        available: capacity(available),
+      },
+    });
+    await this.limitExcess(tx, after, balancesOf(program), envelope.messageId);
+    return releaseId;
+  }
+
+  private async openBreak(
+    tx: Tx,
+    spec: BreakSpec | InvoiceBreak,
+    program: ProgramView | undefined,
+    programExternalId: string,
+    messageId: string,
+  ): Promise<string> {
+    const opened = await this.repository.openBreak(tx, spec, program, programExternalId, messageId);
+    if (opened.created) {
+      await writeOutbox(tx, {
+        type: 'PROGRAM_BREAK_OPENED',
+        programId: program?.id ?? null,
+        partitionKey: programExternalId,
+        correlationId: messageId,
+        occurredAt: this.clock.now(),
+        data: {
+          breakId: opened.id,
+          programId: programExternalId,
+          reservationId: 'reservationId' in spec ? spec.reservationId : null,
+          reason: spec.reason,
+          blocking: program ? spec.blocking : false,
+          messageId,
+          details: spec.details,
+        },
+      });
+    }
+    return opened.id;
   }
 
   private async applyRate(tx: Tx, context: Context, quote: FxRatePublished): Promise<Decision> {
@@ -212,24 +399,30 @@ export class InboundProcessor {
   private async park(
     tx: Tx,
     context: Context,
-    command: ProgramCommand,
+    command: ProgramCommand | InvoiceCommand,
     program: ProgramView | undefined,
-    awaitingKind: 'PROGRAM' | 'PRECEDING_MESSAGE',
+    reservationId: string | null,
+    awaitingKind: AwaitingKind,
     awaitingRef: string,
   ): Promise<Decision> {
-    await this.repository.insertParked(tx, {
-      messageId: context.envelope.messageId,
-      type: command.type,
-      programId: program?.id ?? null,
-      programExternalId: command.programId,
-      awaitingKind,
-      awaitingRef,
-      envelope: context.envelope,
-      coordinates: context.coordinates,
-    });
+    if (context.fromParked) {
+      await this.repository.awaitAgain(tx, context.envelope.messageId, awaitingKind, awaitingRef);
+    } else {
+      await this.repository.insertParked(tx, {
+        messageId: context.envelope.messageId,
+        type: command.type,
+        programId: program?.id ?? null,
+        programExternalId: command.programId,
+        reservationId,
+        awaitingKind,
+        awaitingRef,
+        envelope: context.envelope,
+        coordinates: context.coordinates,
+      });
+    }
     await this.status(tx, context, program, 'PDNG', { awaiting: { kind: awaitingKind, ref: awaitingRef } });
     this.metrics.decided(command.type, 'PARKED');
-    return { wake: command.programId };
+    return { wake: command.programId, parked: true };
   }
 
   private async apply(
@@ -240,7 +433,7 @@ export class InboundProcessor {
     plan: ProgramPlan,
   ): Promise<Decision> {
     const { envelope, coordinates } = context;
-    const effectiveAsOf = envelope.asOf < coordinates.timestamp ? envelope.asOf : coordinates.timestamp;
+    const asOf = effectiveAsOf(context);
     this.metrics.decided(command.type, plan.outcome);
 
     const inbox = (outcome: 'APPLIED' | 'STALE' | 'REJECTED', programId: string | null, reason: string | null = null) =>
@@ -254,31 +447,14 @@ export class InboundProcessor {
 
     if (plan.outcome === 'REJECTED') {
       await inbox('REJECTED', program?.id ?? null, plan.reason);
-      const opened = await this.repository.openBreak(tx, plan.break, program, command.programId, envelope.messageId);
-      if (opened.created) {
-        await writeOutbox(tx, {
-          type: 'PROGRAM_BREAK_OPENED',
-          programId: program?.id ?? null,
-          partitionKey: command.programId,
-          correlationId: envelope.messageId,
-          occurredAt: this.clock.now(),
-          data: {
-            breakId: opened.id,
-            programId: command.programId,
-            reason: plan.break.reason,
-            blocking: program ? plan.break.blocking : false,
-            messageId: envelope.messageId,
-            details: plan.break.details,
-          },
-        });
-      }
-      await this.status(tx, context, program, 'RJCT', { reason: plan.reason, references: { breakId: opened.id } });
+      const breakId = await this.openBreak(tx, plan.break, program, command.programId, envelope.messageId);
+      await this.status(tx, context, program, 'RJCT', { reason: plan.reason, references: { breakId } });
       return {};
     }
 
     if (plan.outcome === 'STALE') {
       await inbox('STALE', program!.id);
-      await this.repository.touchSyncedAt(tx, program!.id, effectiveAsOf);
+      await this.repository.touchSyncedAt(tx, program!.id, asOf);
       await this.status(tx, context, program, 'ACCP');
       return {};
     }
@@ -286,8 +462,8 @@ export class InboundProcessor {
     const before = program ? balancesOf(program) : undefined;
     const after =
       'create' in plan
-        ? await this.repository.createProgram(tx, plan.create, effectiveAsOf)
-        : await this.repository.updateProgram(tx, program!, plan.changes, effectiveAsOf);
+        ? await this.repository.createProgram(tx, plan.create, asOf)
+        : await this.repository.updateProgram(tx, program!, plan.changes, asOf);
 
     await inbox('APPLIED', after.id);
     await this.repository.insertTreasuryLedger(

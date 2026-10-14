@@ -1,6 +1,7 @@
 import type { Numeric } from '../shared/db/db.types.js';
 import type { ProgramStatus } from '../shared/domain/program.types.js';
 import type { Envelope } from './adapter/envelope.types.js';
+import type { ReleaseReason, ReservationStatus } from './domain/invoice-decision.types.js';
 
 export type Outcome = 'APPLIED' | 'STALE' | 'REJECTED';
 
@@ -61,6 +62,7 @@ export interface Decision {
   deadLetter?: string;
   wake?: string;
   wakeRate?: string;
+  parked?: boolean;
 }
 
 export interface FxRateRow {
@@ -71,6 +73,41 @@ export interface FxRateRow {
   version: Numeric;
   status: 'ACTIVE' | 'SUSPENDED';
   rate: Numeric | null;
+}
+
+export interface ReservationRow {
+  id: string;
+  program_id: string;
+  program_external_id: string;
+  invoice_id: string;
+  original_amount: Numeric;
+  original_currency: string;
+  amount: Numeric;
+  released_original_amount: Numeric;
+  released_amount: Numeric;
+  status: ReservationStatus;
+  funding_ref: string | null;
+  valuation_rate: Numeric | null;
+}
+
+export interface ReleaseRow {
+  id: string;
+  reason: ReleaseReason;
+  external_ref: string;
+  original_amount: Numeric;
+  payment_id: string | null;
+  payment_amount: Numeric | null;
+  payment_currency: string | null;
+  payment_rate_id: string | null;
+  cancellation_reason: string | null;
+  write_off_reason: string | null;
+  reverses_external_ref: string | null;
+  reversed: boolean;
+}
+
+export interface FundingRow {
+  reservation_id: string;
+  returned: boolean;
 }
 
 export interface ProcessingContext {

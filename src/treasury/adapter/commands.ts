@@ -1,11 +1,13 @@
 import { Decimal } from 'decimal.js';
 import type { ProgramStatus } from '../../shared/domain/program.types.js';
 import { isCurrency } from '../../shared/money/currency.js';
+import { fitsMinorUnits } from '../../shared/money/money.js';
 import type {
   Command,
   CommandResult,
   FxRateStatus,
   FxRateType,
+  InvoiceCommand,
   Money,
   VersionedMoney,
 } from './commands.types.js';
@@ -111,9 +113,84 @@ function fxRate(envelope: Envelope): Command {
   };
 }
 
+function identifier(value: unknown, field: string): string {
+  if (!isIdentifier(value)) fail(`${field} is missing or invalid`);
+  return value;
+}
+
+function invoiceMoney(value: unknown, field: string): Money {
+  const raw = object(value, field);
+  const parsed = money(raw, field);
+  if (parsed.amount.lte(0)) fail(`${field}.amount must be greater than zero`);
+  if (!fitsMinorUnits(raw.amount as string, parsed.currency)) {
+    fail(`${field}.amount has more decimals than ${parsed.currency} allows`);
+  }
+  return parsed;
+}
+
+function allocation(envelope: Envelope): Command {
+  const payload = envelope.payload;
+  const payment = invoiceMoney(payload.payment, 'payment');
+  const settledAmount = invoiceMoney(payload.settledAmount, 'settledAmount');
+  const fxRateId = payload.fxRateId === undefined || payload.fxRateId === null ? null : identifier(payload.fxRateId, 'fxRateId');
+
+  if (payment.currency === settledAmount.currency) {
+    if (fxRateId !== null) fail('fxRateId is only allowed when the payment is in another currency');
+    if (!payment.amount.eq(settledAmount.amount)) fail('payment and settledAmount must be equal in the same currency');
+  } else if (fxRateId === null) {
+    fail('fxRateId is required when the payment is in another currency');
+  }
+
+  return {
+    type: 'INVOICE_PAYMENT_ALLOCATED',
+    programId: programId(envelope),
+    invoiceId: identifier(payload.invoiceId, 'invoiceId'),
+    allocationId: identifier(payload.allocationId, 'allocationId'),
+    paymentId: identifier(payload.paymentId, 'paymentId'),
+    payment,
+    settledAmount,
+    fxRateId,
+  };
+}
+
 function build(envelope: Envelope): Command | undefined {
   const payload = envelope.payload;
   switch (envelope.type) {
+    case 'INVOICE_FUNDED':
+    case 'INVOICE_FUNDING_RETURNED':
+      return {
+        type: envelope.type,
+        programId: programId(envelope),
+        invoiceId: identifier(payload.invoiceId, 'invoiceId'),
+        fundingRef: identifier(payload.fundingRef, 'fundingRef'),
+      };
+    case 'INVOICE_PAYMENT_ALLOCATED':
+      return allocation(envelope);
+    case 'INVOICE_BALANCE_WRITTEN_OFF':
+      return {
+        type: 'INVOICE_BALANCE_WRITTEN_OFF',
+        programId: programId(envelope),
+        invoiceId: identifier(payload.invoiceId, 'invoiceId'),
+        writeOffId: identifier(payload.writeOffId, 'writeOffId'),
+        amount: invoiceMoney(payload.amount, 'amount'),
+        writeOffReason: text(payload.writeOffReason, 'writeOffReason', 64),
+      };
+    case 'INVOICE_FUNDING_CANCELLED':
+      return {
+        type: 'INVOICE_FUNDING_CANCELLED',
+        programId: programId(envelope),
+        invoiceId: identifier(payload.invoiceId, 'invoiceId'),
+        cancellationId: identifier(payload.cancellationId, 'cancellationId'),
+        cancellationReason: text(payload.cancellationReason, 'cancellationReason', 64),
+      };
+    case 'INVOICE_RELEASE_REVERSED':
+      return {
+        type: 'INVOICE_RELEASE_REVERSED',
+        programId: programId(envelope),
+        invoiceId: identifier(payload.invoiceId, 'invoiceId'),
+        reversalId: identifier(payload.reversalId, 'reversalId'),
+        externalRef: identifier(payload.externalRef, 'externalRef'),
+      };
     case 'PROGRAM_SNAPSHOT': {
       const statusField = object(payload.status, 'status');
       const resolved = payload.resolvedBreaks ?? [];
@@ -167,6 +244,10 @@ function build(envelope: Envelope): Command | undefined {
     default:
       return undefined;
   }
+}
+
+export function isInvoiceCommand(command: Command): command is InvoiceCommand {
+  return command.type.startsWith('INVOICE_');
 }
 
 export function toCommand(envelope: Envelope): CommandResult {

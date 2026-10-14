@@ -33,7 +33,8 @@ const APP_CASES: Case[] = [
   ['ok: release REVERSAL', `INSERT INTO reservation_release (reservation_id, reason, external_ref, original_amount, amount, reverses_release_id, message_id) VALUES ('${RESERVATION}', 'REVERSAL', 'RV1', 40, 40, '${RELEASE}', 'm3')`, 'ok'],
   ['ok: reservation PARTIALLY_RELEASED', `UPDATE reservation SET status = 'PARTIALLY_RELEASED', released_original_amount = 40, released_amount = 40, updated_at = now() WHERE id = '${RESERVATION}'`, 'ok'],
   ['ok: first active funding', `INSERT INTO reservation_funding (reservation_id, funding_ref, funded_at, message_id) VALUES ('${RESERVATION}', 'F1', now(), 'm4')`, 'ok'],
-  ['ok: app updates reserved', `UPDATE program SET reserved = 100, updated_at = now() WHERE id = '${PROGRAM}'`, 'ok'],
+  ['ok: app re-targets a parked message', `UPDATE parked_message SET awaiting_kind = 'FX_RATE', awaiting_ref = 'R-1' WHERE false`, 'ok'],
+  ['ok: app updates reserved',`UPDATE program SET reserved = 100, updated_at = now() WHERE id = '${PROGRAM}'`, 'ok'],
   ['ok: app marks outbox published', `WITH e AS (INSERT INTO outbox_event (type, program_id, partition_key, payload) VALUES ('RESERVATION_CREATED', '${PROGRAM}', 'P1', '{}') RETURNING id) UPDATE outbox_event SET published_at = now() WHERE id IN (SELECT id FROM e)`, 'ok'],
 
   ['program currency lowercase', `INSERT INTO program (external_id, client_ref, currency, credit_limit, updated_at) VALUES ('P2', 'C', 'eur', 1, now())`, CHECK],
@@ -71,6 +72,8 @@ const APP_CASES: Case[] = [
   ['app updates inbox', `UPDATE processed_message SET outcome = 'REJECTED'`, DENIED],
   ['app deletes releases', `DELETE FROM reservation_release`, DENIED],
   ['app updates fx rates', `UPDATE fx_rate SET rate = 2`, DENIED],
+  ['app updates a parked envelope', `UPDATE parked_message SET envelope = '{}'`, DENIED],
+  ['app deletes parked messages', `DELETE FROM parked_message`, DENIED],
   ['app deletes outbox', `DELETE FROM outbox_event`, DENIED],
   ['app updates idempotency', `UPDATE idempotency_record SET response_status = 200`, DENIED],
   ['app creates a table', `CREATE TABLE public.evil (id int)`, DENIED],

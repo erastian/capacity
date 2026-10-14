@@ -119,6 +119,57 @@ describe('toCommand', () => {
     });
   });
 
+  describe('invoice messages', () => {
+    const invoice = (type: string, payload: Record<string, unknown>) =>
+      envelope({ type, version: undefined, payload: { invoiceId: 'INV-1', ...payload } });
+
+    const allocation = (payload: Record<string, unknown> = {}) =>
+      invoice('INVOICE_PAYMENT_ALLOCATED', {
+        allocationId: 'A-1',
+        paymentId: 'PAY-1',
+        payment: { amount: '100.00', currency: 'GBP' },
+        settledAmount: { amount: '123.45', currency: 'USD' },
+        fxRateId: 'R-1',
+        ...payload,
+      });
+
+    it.each<[string, ReturnType<typeof envelope>]>([
+      ['a funding', invoice('INVOICE_FUNDED', { fundingRef: 'F-1' })],
+      ['a funding return', invoice('INVOICE_FUNDING_RETURNED', { fundingRef: 'F-1' })],
+      ['a payment in another currency', allocation()],
+      [
+        'a payment in the invoice currency',
+        allocation({ payment: { amount: '10.00', currency: 'USD' }, settledAmount: { amount: '10.00', currency: 'USD' }, fxRateId: undefined }),
+      ],
+      ['a write-off', invoice('INVOICE_BALANCE_WRITTEN_OFF', { writeOffId: 'W-1', amount: { amount: '0.03', currency: 'USD' }, writeOffReason: 'BANK_CHARGES' })],
+      ['a cancellation', invoice('INVOICE_FUNDING_CANCELLED', { cancellationId: 'C-1', cancellationReason: 'PAYOUT_FAILED' })],
+      ['a reversal', invoice('INVOICE_RELEASE_REVERSED', { reversalId: 'REV-1', externalRef: 'A-1' })],
+    ])('builds %s', (_, value) => {
+      expect(toCommand(parse(value))).toMatchObject({ kind: 'command', command: { type: value.type, invoiceId: 'INV-1', programId: 'P1' } });
+    });
+
+    it.each<[string, ReturnType<typeof envelope>]>([
+      ['a payment without fxRateId in another currency', allocation({ fxRateId: undefined })],
+      [
+        'a payment with fxRateId in the same currency',
+        allocation({ payment: { amount: '10.00', currency: 'USD' }, settledAmount: { amount: '10.00', currency: 'USD' } }),
+      ],
+      [
+        'different amounts in the same currency',
+        allocation({ payment: { amount: '10.00', currency: 'USD' }, settledAmount: { amount: '9.99', currency: 'USD' }, fxRateId: undefined }),
+      ],
+      ['more decimals than the currency allows', allocation({ settledAmount: { amount: '123.456', currency: 'USD' } })],
+      ['decimals in a zero-decimal currency', allocation({ payment: { amount: '100.5', currency: 'JPY' } })],
+      ['a zero amount', allocation({ payment: { amount: '0', currency: 'GBP' } })],
+      ['a missing invoiceId', invoice('INVOICE_FUNDED', { invoiceId: undefined, fundingRef: 'F-1' })],
+      ['a missing fundingRef', invoice('INVOICE_FUNDED', {})],
+      ['a write-off without reason', invoice('INVOICE_BALANCE_WRITTEN_OFF', { writeOffId: 'W-1', amount: { amount: '1', currency: 'USD' } })],
+      ['a reversal without externalRef', invoice('INVOICE_RELEASE_REVERSED', { reversalId: 'REV-1' })],
+    ])('rejects %s', (_, value) => {
+      expect(toCommand(parse(value)).kind).toBe('invalid');
+    });
+  });
+
   it.each<[string, Record<string, unknown>]>([
     ['missing programId', { programId: undefined }],
     ['missing version', { version: undefined }],
