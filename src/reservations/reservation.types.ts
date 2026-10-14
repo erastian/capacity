@@ -27,12 +27,6 @@ export interface NewReservation {
   correlationId: string;
 }
 
-export interface ProgramBalances {
-  creditLimit: Decimal;
-  externalUtilized: Decimal;
-  reserved: Decimal;
-}
-
 export interface Decline {
   programId: string;
   invoiceId: string;

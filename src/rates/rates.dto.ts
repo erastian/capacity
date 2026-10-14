@@ -1,16 +1,15 @@
-import { IsIn, IsOptional, Matches } from 'class-validator';
+import { IsIn, IsOptional } from 'class-validator';
 import { PageQuery } from '../shared/http/pagination.js';
+import { IsCurrency } from '../shared/money/is-currency.js';
 import type { RateType } from './rates.types.js';
-
-const CURRENCY = /^[A-Z]{3}$/;
 
 export class RatesQuery extends PageQuery {
   @IsOptional()
-  @Matches(CURRENCY, { message: 'from must be an ISO 4217 code' })
+  @IsCurrency()
   from?: string;
 
   @IsOptional()
-  @Matches(CURRENCY, { message: 'to must be an ISO 4217 code' })
+  @IsCurrency()
   to?: string;
 
   @IsOptional()

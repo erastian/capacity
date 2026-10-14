@@ -46,8 +46,3 @@ export type DeclineCode =
 export type Assessment =
   | { outcome: 'decline'; code: DeclineCode; amount?: Decimal; fx?: FxQuote }
   | { outcome: 'reserve'; amount: Decimal; fx?: FxQuote };
-
-export interface Availability {
-  available: Decimal;
-  overLimit: Decimal;
-}

@@ -6,13 +6,13 @@ import type { Principal } from '../shared/auth/principal.types.js';
 import { Scope } from '../shared/auth/scopes.js';
 import { clientRefFilter, programScope } from '../shared/auth/visibility.js';
 import type { ProgramScope } from '../shared/auth/visibility.types.js';
-import type { Numeric } from '../shared/db/db.types.js';
+import { toDecimal as dec } from '../shared/db/numeric.js';
 import { PrismaService } from '../shared/db/prisma.service.js';
 import { AppError } from '../shared/errors/app-error.js';
 import { CURSOR_PART, decodeCursor, toPage } from '../shared/http/pagination.js';
 import type { Page } from '../shared/http/pagination.types.js';
-import { isCurrency, minorUnits } from '../shared/money/currency.js';
-import { CAPACITY_SCALE, ceilTo, formatAmount } from '../shared/money/money.js';
+import { minorUnits } from '../shared/money/currency.js';
+import { ceilTo, formatAmount, formatCapacity } from '../shared/money/money.js';
 import { Clock } from '../shared/time/clock.js';
 import type {
   Amount,
@@ -39,15 +39,13 @@ const RESERVATIONS = `
   JOIN program p ON p.id = r.program_id
   LEFT JOIN fx_rate f ON f.id = r.fx_rate_id`;
 
-const dec = (value: Numeric) => new Decimal(value.toString());
-
 const inCurrency = (value: Decimal, currency: string): Amount => ({
   amount: formatAmount(value, minorUnits(currency)),
   currency,
 });
 
 const inCapacity = (value: Decimal, currency: string): Amount => ({
-  amount: formatAmount(value, CAPACITY_SCALE),
+  amount: formatCapacity(value),
   currency,
 });
 
@@ -142,12 +140,6 @@ export class ReservationQueries {
     const row = await this.find(viewer.scope, id);
     const owed = dec(row.original_amount).minus(dec(row.released_original_amount));
     const target = currency ?? row.original_currency;
-    if (!isCurrency(target)) {
-      throw new AppError(HttpStatus.UNPROCESSABLE_ENTITY, 'VALIDATION_FAILED', {
-        detail: 'Request validation failed',
-        extensions: { errors: [{ field: 'currency', messages: ['currency must be an ISO 4217 code'] }] },
-      });
-    }
     const base = {
       reservationId: row.id,
       invoiceId: row.invoice_id,

@@ -1,8 +1,9 @@
 import { isUUID } from 'class-validator';
 import { Decimal } from 'decimal.js';
+import { isIdentifier } from '../../shared/domain/identifier.js';
 import type { ProgramStatus } from '../../shared/domain/program.types.js';
 import { isCurrency } from '../../shared/money/currency.js';
-import { fitsMinorUnits } from '../../shared/money/money.js';
+import { AMOUNT_TEXT, fitsMinorUnits, RATE_TEXT } from '../../shared/money/money.js';
 import type {
   Command,
   CommandResult,
@@ -12,13 +13,11 @@ import type {
   Money,
   VersionedMoney,
 } from './commands.types.js';
-import { isIdentifier, parseVersion } from './envelope.js';
+import { parseVersion } from './envelope.js';
 import type { Envelope } from './envelope.types.js';
 
 export const SUPPORTED_SCHEMA_VERSION = 1;
 
-const AMOUNT = /^(0|[1-9]\d{0,15})(\.\d{1,4})?$/;
-const RATE = /^(0|[1-9]\d{0,19})(\.\d{1,18})?$/;
 const STATUSES: readonly ProgramStatus[] = ['ACTIVE', 'SUSPENDED', 'CLOSED'];
 const RATE_TYPES: readonly FxRateType[] = ['VALUATION', 'CONVERSION'];
 const RATE_STATUSES: readonly FxRateStatus[] = ['ACTIVE', 'SUSPENDED'];
@@ -50,7 +49,7 @@ function currency(value: unknown, field: string): string {
 
 function money(value: unknown, field: string): Money {
   const raw = object(value, field);
-  if (typeof raw.amount !== 'string' || !AMOUNT.test(raw.amount)) {
+  if (typeof raw.amount !== 'string' || !AMOUNT_TEXT.test(raw.amount)) {
     fail(`${field}.amount must be a non-negative decimal string with at most 4 places`);
   }
   return { amount: new Decimal(raw.amount), currency: currency(raw.currency, `${field}.currency`) };
@@ -93,7 +92,7 @@ function fxRate(envelope: Envelope): Command {
 
   let rate: Decimal | undefined;
   if (rateStatus === 'ACTIVE') {
-    if (typeof payload.rate !== 'string' || !RATE.test(payload.rate)) {
+    if (typeof payload.rate !== 'string' || !RATE_TEXT.test(payload.rate)) {
       fail('rate must be a decimal string with at most 18 places');
     }
     rate = new Decimal(payload.rate);

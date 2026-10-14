@@ -1,9 +1,8 @@
-import { Decimal } from 'decimal.js';
+import { capacityOf } from '../../shared/money/capacity.js';
 import { exposure } from '../../shared/money/money.js';
 import type {
   AssessContext,
   Assessment,
-  Availability,
   DeclineCode,
   FxQuote,
   ProgramState,
@@ -20,16 +19,6 @@ export const DECLINE_STATUS: Record<DeclineCode, 409 | 422> = {
   FX_RATE_STALE: 422,
   INSUFFICIENT_CAPACITY: 409,
 };
-
-export function availability(program: ProgramState): Availability {
-  const free = program.creditLimit
-    .minus(program.externalUtilized)
-    .minus(program.reserved);
-  return {
-    available: Decimal.max(free, 0),
-    overLimit: Decimal.max(free.neg(), 0),
-  };
-}
 
 export function needsFx(program: ProgramState, input: ReserveInput): boolean {
   return input.currency !== program.currency;
@@ -73,7 +62,7 @@ export function assess(
   }
 
   const amount = exposure(input.originalAmount, quote?.rate);
-  if (amount.gt(availability(program).available)) {
+  if (amount.gt(capacityOf(program).available)) {
     return { outcome: 'decline', code: 'INSUFFICIENT_CAPACITY', amount, fx: quote };
   }
 

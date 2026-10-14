@@ -7,7 +7,6 @@ import type {
   VersionedMoney,
 } from '../adapter/commands.types.js';
 import type {
-  Balances,
   BreakReason,
   ProgramChanges,
   ProgramPlan,
@@ -212,8 +211,4 @@ export function decideProgramCommand(command: ProgramCommand, program: ProgramVi
       return { outcome: 'APPLIED', changes: { status: incoming }, ledger: 'TREASURY_SNAPSHOT' };
     }
   }
-}
-
-export function overLimit(balances: Balances): Decimal {
-  return Decimal.max(balances.externalUtilized.plus(balances.reserved).minus(balances.creditLimit), 0);
 }

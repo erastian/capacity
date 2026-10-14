@@ -60,9 +60,3 @@ export type ProgramPlan =
   | { outcome: 'APPLIED'; changes: ProgramChanges; ledger: LedgerKind }
   | { outcome: 'STALE' }
   | { outcome: 'REJECTED'; reason: BreakReason; break: BreakSpec };
-
-export interface Balances {
-  creditLimit: Decimal;
-  externalUtilized: Decimal;
-  reserved: Decimal;
-}

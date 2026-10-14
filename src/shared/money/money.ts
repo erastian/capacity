@@ -3,11 +3,9 @@ import { minorUnits } from './currency.js';
 
 export const CAPACITY_SCALE = 4;
 
-const DECIMAL_TEXT = /^(0|[1-9]\d{0,15})(\.\d{1,18})?$/;
+export const AMOUNT_TEXT = /^(0|[1-9]\d{0,15})(\.\d{1,4})?$/;
 
-export function isDecimalText(text: string): boolean {
-  return DECIMAL_TEXT.test(text);
-}
+export const RATE_TEXT = /^(0|[1-9]\d{0,19})(\.\d{1,18})?$/;
 
 export function decimalPlaces(text: string): number {
   return text.split('.')[1]?.length ?? 0;
@@ -30,4 +28,8 @@ export function exposure(
 
 export function formatAmount(value: Decimal, places: number): string {
   return value.toFixed(places);
+}
+
+export function formatCapacity(value: Decimal): string {
+  return formatAmount(value, CAPACITY_SCALE);
 }

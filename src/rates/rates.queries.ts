@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { Decimal } from 'decimal.js';
+import { toDecimal } from '../shared/db/numeric.js';
 import { PrismaService } from '../shared/db/prisma.service.js';
 import { CURSOR_PART, decodeCursor, toPage } from '../shared/http/pagination.js';
 import type { Page } from '../shared/http/pagination.types.js';
@@ -19,7 +19,7 @@ function toQuote(row: QuoteRow): CurrentQuote {
     rateType: row.rate_type,
     version: BigInt(row.version.toString()),
     status: row.status,
-    rate: row.rate === null ? undefined : new Decimal(row.rate.toString()),
+    rate: row.rate === null ? undefined : toDecimal(row.rate),
     asOf: row.effective_as_of,
   };
 }

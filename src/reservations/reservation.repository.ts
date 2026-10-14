@@ -1,18 +1,12 @@
 import { Injectable } from '@nestjs/common';
+import type { Decimal } from 'decimal.js';
 import type { Numeric } from '../shared/db/db.types.js';
+import { toDecimal as dec } from '../shared/db/numeric.js';
 import type { Tx } from '../shared/db/prisma.service.js';
 import type { ProgramStatus } from '../shared/domain/program.types.js';
-import { Decimal } from 'decimal.js';
+import type { CapacityBalances } from '../shared/money/capacity.types.js';
 import type { FxQuote, ProgramState } from './domain/assess.types.js';
-import type {
-  Decline,
-  ExistingReservation,
-  NewReservation,
-  ProgramBalances,
-  StoredResponse,
-} from './reservation.types.js';
-
-const dec = (value: Numeric): Decimal => new Decimal(value.toString());
+import type { Decline, ExistingReservation, NewReservation, StoredResponse } from './reservation.types.js';
 
 @Injectable()
 export class ReservationRepository {
@@ -176,7 +170,7 @@ export class ReservationRepository {
     tx: Tx,
     programId: string,
     amount: Decimal,
-  ): Promise<ProgramBalances | undefined> {
+  ): Promise<CapacityBalances | undefined> {
     const rows = await tx.$queryRaw<
       { credit_limit: Numeric; external_utilized: Numeric; reserved: Numeric }[]
     >`
@@ -201,7 +195,7 @@ export class ReservationRepository {
     programId: string,
     reservationId: string,
     amount: Decimal,
-    after: ProgramBalances,
+    after: CapacityBalances,
   ): Promise<void> {
     await tx.$executeRaw`
       INSERT INTO capacity_ledger (

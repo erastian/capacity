@@ -1,5 +1,5 @@
 import { Decimal } from 'decimal.js';
-import { assess, availability } from './assess.js';
+import { assess } from './assess.js';
 import type { AssessContext, FxQuote, ProgramState, ReserveInput } from './assess.types.js';
 
 const NOW = new Date('2026-10-13T12:00:00Z');
@@ -38,22 +38,6 @@ const quote = (patch: Partial<FxQuote> = {}): FxQuote => ({
   rate: new Decimal('0.9'),
   effectiveAsOf: new Date(NOW.getTime() - HOUR),
   ...patch,
-});
-
-describe('availability', () => {
-  it('is limit minus utilisation', () => {
-    const { available, overLimit } = availability(program());
-    expect(available.toString()).toBe('500');
-    expect(overLimit.toString()).toBe('0');
-  });
-
-  it('never goes negative and reports the excess', () => {
-    const { available, overLimit } = availability(
-      program({ creditLimit: new Decimal(400) }),
-    );
-    expect(available.toString()).toBe('0');
-    expect(overLimit.toString()).toBe('100');
-  });
 });
 
 describe('assess', () => {

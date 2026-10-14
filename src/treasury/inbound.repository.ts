@@ -1,7 +1,9 @@
 import { Injectable } from '@nestjs/common';
-import { Decimal } from 'decimal.js';
+import type { Decimal } from 'decimal.js';
 import type { Numeric } from '../shared/db/db.types.js';
+import { toDecimal as dec } from '../shared/db/numeric.js';
 import type { Tx } from '../shared/db/prisma.service.js';
+import type { CapacityBalances } from '../shared/money/capacity.types.js';
 import type { FxRatePublished } from './adapter/commands.types.js';
 import type { Envelope } from './adapter/envelope.types.js';
 import type { BreakView } from './domain/break-closure.types.js';
@@ -15,7 +17,6 @@ import type {
   StoredRelease,
 } from './domain/invoice-decision.types.js';
 import type {
-  Balances,
   BreakSpec,
   LedgerKind,
   NewProgram,
@@ -49,11 +50,10 @@ function toQuote(row: FxRateRow): StoredQuote {
     rateType: row.rate_type,
     version: BigInt(row.version.toString()),
     status: row.status,
-    rate: row.rate === null ? undefined : new Decimal(row.rate.toString()),
+    rate: row.rate === null ? undefined : dec(row.rate),
   };
 }
 
-const dec = (value: Numeric) => new Decimal(value.toString());
 const big = (value: Numeric | null) => (value === null ? null : BigInt(value.toString()));
 
 export const KNOWN_TYPES = new Set([
@@ -374,8 +374,8 @@ export class InboundRepository {
     tx: Tx,
     programId: string,
     kind: LedgerKind,
-    before: Balances,
-    after: Balances,
+    before: CapacityBalances,
+    after: CapacityBalances,
     messageId: string,
   ): Promise<boolean> {
     const creditDelta = after.creditLimit.minus(before.creditLimit);

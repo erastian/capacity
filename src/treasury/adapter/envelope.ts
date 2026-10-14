@@ -1,11 +1,7 @@
+import { isIdentifier } from '../../shared/domain/identifier.js';
 import type { EnvelopeResult, RawMessage } from './envelope.types.js';
 
-const IDENTIFIER = /^[A-Za-z0-9._:/-]{1,128}$/;
 const ISO_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,9})?(Z|[+-]\d{2}:\d{2})$/;
-
-export function isIdentifier(value: unknown): value is string {
-  return typeof value === 'string' && IDENTIFIER.test(value);
-}
 
 export function parseInstant(value: unknown): Date | undefined {
   if (typeof value !== 'string' || !ISO_INSTANT.test(value)) return undefined;

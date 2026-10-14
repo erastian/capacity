@@ -7,11 +7,13 @@ import { canSeeProgram } from '../shared/auth/visibility.js';
 import { type Tx, PrismaService } from '../shared/db/prisma.service.js';
 import { AppError } from '../shared/errors/app-error.js';
 import { problem } from '../shared/errors/problem.js';
-import { isCurrency, minorUnits } from '../shared/money/currency.js';
 import { Decimal } from 'decimal.js';
-import { CAPACITY_SCALE, fitsMinorUnits, formatAmount } from '../shared/money/money.js';
+import { capacityOf } from '../shared/money/capacity.js';
+import type { CapacityBalances } from '../shared/money/capacity.types.js';
+import { minorUnits } from '../shared/money/currency.js';
+import { fitsMinorUnits, formatAmount, formatCapacity } from '../shared/money/money.js';
 import { businessDate, Clock } from '../shared/time/clock.js';
-import { assess, availability, DECLINE_STATUS, needsFx } from './domain/assess.js';
+import { assess, DECLINE_STATUS, needsFx } from './domain/assess.js';
 import type {
   AssessContext,
   DeclineCode,
@@ -22,14 +24,11 @@ import type {
 import { ReservationRepository } from './reservation.repository.js';
 import type {
   ExistingReservation,
-  ProgramBalances,
   ReserveCommand,
   ReserveOutcome as Outcome,
   ReserveResult,
 } from './reservation.types.js';
 import type { ReserveRequest } from './reserve.dto.js';
-
-const cap = (value: Decimal) => formatAmount(value, CAPACITY_SCALE);
 
 export function requestHash(request: ReserveRequest): string {
   const canonical = {
@@ -44,9 +43,7 @@ export function requestHash(request: ReserveRequest): string {
 
 function validate(request: ReserveRequest): void {
   const errors: { field: string; messages: string[] }[] = [];
-  if (!isCurrency(request.currency)) {
-    errors.push({ field: 'currency', messages: ['currency must be an ISO 4217 code'] });
-  } else if (!fitsMinorUnits(request.amount, request.currency)) {
+  if (!fitsMinorUnits(request.amount, request.currency)) {
     errors.push({
       field: 'amount',
       messages: [`amount must have at most ${minorUnits(request.currency)} decimal places for ${request.currency}`],
@@ -206,10 +203,10 @@ export class ReservationsService {
     amount: Decimal,
     fx: FxQuote | undefined,
     created: { id: string; createdAt: Date },
-    after: ProgramBalances,
+    after: CapacityBalances,
   ) {
     const original = formatAmount(input.originalAmount, minorUnits(input.currency));
-    const { available } = availability({ ...program, ...after });
+    const { available } = capacityOf(after);
     return {
       id: created.id,
       programId: program.externalId,
@@ -217,16 +214,16 @@ export class ReservationsService {
       status: 'ACTIVE',
       originalAmount: original,
       originalCurrency: input.currency,
-      amount: cap(amount),
+      amount: formatCapacity(amount),
       currency: program.currency,
       fxRateId: fx?.rateId ?? null,
       dueDate: input.dueDate,
       outstanding: original,
-      capacityOutstanding: cap(amount),
+      capacityOutstanding: formatCapacity(amount),
       createdAt: created.createdAt.toISOString(),
       program: {
-        available: cap(available),
-        reserved: cap(after.reserved),
+        available: formatCapacity(available),
+        reserved: formatCapacity(after.reserved),
         currency: program.currency,
       },
     };
@@ -240,17 +237,17 @@ export class ReservationsService {
     assessment: { code: DeclineCode; amount?: Decimal; fx?: FxQuote },
     context: AssessContext,
   ): Promise<Outcome> {
-    const { available, overLimit } = availability(program);
+    const { available, overLimit } = capacityOf(program);
     const details = {
       programStatus: program.status,
       openBlockingBreaks: program.openBlockingBreaks,
-      creditLimit: cap(program.creditLimit),
-      externalUtilized: cap(program.externalUtilized),
-      reserved: cap(program.reserved),
-      available: cap(available),
-      overLimit: cap(overLimit),
+      creditLimit: formatCapacity(program.creditLimit),
+      externalUtilized: formatCapacity(program.externalUtilized),
+      reserved: formatCapacity(program.reserved),
+      available: formatCapacity(available),
+      overLimit: formatCapacity(overLimit),
       currency: program.currency,
-      requestedCapacity: assessment.amount ? cap(assessment.amount) : null,
+      requestedCapacity: assessment.amount ? formatCapacity(assessment.amount) : null,
       fxRateId: assessment.fx?.rateId ?? null,
       fxRate: assessment.fx?.rate?.toString() ?? null,
       dueDate: input.dueDate,
@@ -284,7 +281,7 @@ export class ReservationsService {
     });
 
     return this.problem(command, DECLINE_STATUS[assessment.code], assessment.code, {
-      extensions: { available: cap(available), currency: program.currency },
+      extensions: { available: formatCapacity(available), currency: program.currency },
     });
   }
 

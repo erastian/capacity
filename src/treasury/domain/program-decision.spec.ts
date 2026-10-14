@@ -1,6 +1,6 @@
 import { Decimal } from 'decimal.js';
 import type { ProgramCommand, ProgramSnapshot } from '../adapter/commands.types.js';
-import { decideProgramCommand, overLimit } from './program-decision.js';
+import { decideProgramCommand } from './program-decision.js';
 import type { ProgramView } from './program-decision.types.js';
 
 const money = (amount: string, version: bigint, currency = 'EUR') => ({
@@ -140,13 +140,5 @@ describe('reinstatement', () => {
 
   it('is stale when already applied', () => {
     expect(decideProgramCommand(reinstate(1n), program({ status: 'CLOSED' }))).toEqual({ outcome: 'STALE' });
-  });
-});
-
-describe('overLimit', () => {
-  it('is zero within the limit and the excess beyond it', () => {
-    const balances = { creditLimit: new Decimal(100), externalUtilized: new Decimal(30), reserved: new Decimal(50) };
-    expect(overLimit(balances).toString()).toBe('0');
-    expect(overLimit({ ...balances, creditLimit: new Decimal(60) }).toString()).toBe('20');
   });
 });

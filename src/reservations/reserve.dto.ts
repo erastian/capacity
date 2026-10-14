@@ -1,26 +1,24 @@
-import { IsISO8601, IsString, Length, Matches } from 'class-validator';
-
-const IDENTIFIER = /^[A-Za-z0-9._:/-]+$/;
+import { IsISO8601, IsString, Matches } from 'class-validator';
+import { IDENTIFIER } from '../shared/domain/identifier.js';
+import { IsCurrency } from '../shared/money/is-currency.js';
+import { AMOUNT_TEXT } from '../shared/money/money.js';
 
 export class ReserveRequest {
   @IsString()
-  @Length(1, 128)
-  @Matches(IDENTIFIER)
+  @Matches(IDENTIFIER, { message: 'programId must be 1-128 characters of [A-Za-z0-9._:/-]' })
   programId: string;
 
   @IsString()
-  @Length(1, 128)
-  @Matches(IDENTIFIER)
+  @Matches(IDENTIFIER, { message: 'invoiceId must be 1-128 characters of [A-Za-z0-9._:/-]' })
   invoiceId: string;
 
   @IsString()
-  @Matches(/^(0|[1-9]\d{0,15})(\.\d{1,4})?$/, {
+  @Matches(AMOUNT_TEXT, {
     message: 'amount must be a positive decimal string',
   })
   amount: string;
 
-  @IsString()
-  @Matches(/^[A-Z]{3}$/)
+  @IsCurrency()
   currency: string;
 
   @IsISO8601({ strict: true, strictSeparator: true })

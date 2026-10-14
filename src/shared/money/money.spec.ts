@@ -1,6 +1,6 @@
 import { isCurrency, minorUnits } from './currency.js';
 import { Decimal } from 'decimal.js';
-import { exposure, fitsMinorUnits, formatAmount, isDecimalText } from './money.js';
+import { AMOUNT_TEXT, exposure, fitsMinorUnits, formatAmount, RATE_TEXT } from './money.js';
 
 describe('currencies', () => {
   it.each([
@@ -20,15 +20,22 @@ describe('currencies', () => {
   });
 });
 
-describe('amount text', () => {
-  it.each(['0', '1', '100.5', '125000.00', '0.000012103412345678'])(
-    'accepts %s',
-    (text) => expect(isDecimalText(text)).toBe(true),
+describe('amount and rate text', () => {
+  it.each(['0', '1', '100.5', '125000.00', '1.0001'])('accepts the amount %s', (text) =>
+    expect(AMOUNT_TEXT.test(text)).toBe(true),
   );
 
-  it.each(['', '-1', '+1', '01', '1.', '.5', '1e3', '1,5', ' 1', '12345678901234567'])(
-    'rejects %s',
-    (text) => expect(isDecimalText(text)).toBe(false),
+  it.each(['', '-1', '+1', '01', '1.', '.5', '1e3', '1,5', ' 1', '12345678901234567', '1.00001'])(
+    'rejects the amount %s',
+    (text) => expect(AMOUNT_TEXT.test(text)).toBe(false),
+  );
+
+  it.each(['0.000012103412345678', '12345678901234567890'])('accepts the rate %s', (text) =>
+    expect(RATE_TEXT.test(text)).toBe(true),
+  );
+
+  it.each(['0.0000121034123456789', '123456789012345678901', '-1'])('rejects the rate %s', (text) =>
+    expect(RATE_TEXT.test(text)).toBe(false),
   );
 
   it.each([

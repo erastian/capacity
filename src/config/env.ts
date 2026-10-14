@@ -1,6 +1,5 @@
-import { plainToInstance, Transform, Type } from 'class-transformer';
+import { plainToInstance, Type } from 'class-transformer';
 import {
-  IsBoolean,
   IsIn,
   IsInt,
   IsNotEmpty,
@@ -11,6 +10,7 @@ import {
   Min,
   validateSync,
 } from 'class-validator';
+import { BooleanFlag } from './boolean-flag.js';
 
 export const NODE_ENVS = ['development', 'test', 'production'] as const;
 export const LOG_LEVELS = [
@@ -100,16 +100,10 @@ export class Env {
   @Min(1000)
   RECONCILIATION_BATCH_CHECK_INTERVAL_MS = 60_000;
 
-  @Transform(({ value }) =>
-    value === 'true' ? true : value === 'false' ? false : value,
-  )
-  @IsBoolean()
+  @BooleanFlag()
   PUBLISH_ACCEPTED_STATUS = false;
 
-  @Transform(({ value }) =>
-    value === 'true' ? true : value === 'false' ? false : value,
-  )
-  @IsBoolean()
+  @BooleanFlag()
   TREASURY_CONSUMER_ENABLED = true;
 
   @IsString()
@@ -135,10 +129,7 @@ export class Env {
   @IsNotEmpty()
   KAFKA_SASL_PASSWORD: string;
 
-  @Transform(({ value }) =>
-    value === 'true' ? true : value === 'false' ? false : value,
-  )
-  @IsBoolean()
+  @BooleanFlag()
   OUTBOX_RELAY_ENABLED = true;
 
   @Type(() => Number)

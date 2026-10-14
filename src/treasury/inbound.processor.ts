@@ -1,12 +1,13 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Decimal } from 'decimal.js';
 import type { Env } from '../config/env.js';
 import type { OutboundEventType } from '../outbox/outbox.types.js';
 import { writeOutbox } from '../outbox/outbox.writer.js';
 import { type Tx, PrismaService } from '../shared/db/prisma.service.js';
 import { minorUnits } from '../shared/money/currency.js';
-import { CAPACITY_SCALE, formatAmount } from '../shared/money/money.js';
+import { capacityOf } from '../shared/money/capacity.js';
+import type { CapacityBalances } from '../shared/money/capacity.types.js';
+import { formatAmount, formatCapacity } from '../shared/money/money.js';
 import { Clock } from '../shared/time/clock.js';
 import { isInvoiceCommand, toCommand } from './adapter/commands.js';
 import type {
@@ -31,21 +32,21 @@ import type {
   ReleaseReason,
   ReservationView,
 } from './domain/invoice-decision.types.js';
-import { decideProgramCommand, overLimit } from './domain/program-decision.js';
-import type { Balances, BreakSpec, ProgramPlan, ProgramView } from './domain/program-decision.types.js';
+import { decideProgramCommand } from './domain/program-decision.js';
+import type { BreakSpec, ProgramPlan, ProgramView } from './domain/program-decision.types.js';
 import { InboundMetrics } from './inbound.metrics.js';
 import { InboundRepository, KNOWN_TYPES } from './inbound.repository.js';
 import type { AwaitingKind, Decision, ProcessingContext as Context } from './inbound.types.js';
 import { ReconciliationBatches } from './reconciliation-batches.js';
 import { writeStatus } from './status.writer.js';
 
-const ZERO_BALANCES = (program: ProgramView): Balances => ({
+const ZERO_BALANCES = (program: ProgramView): CapacityBalances => ({
   creditLimit: program.creditLimit.mul(0),
   externalUtilized: program.externalUtilized.mul(0),
   reserved: program.reserved,
 });
 
-const balancesOf = (program: ProgramView): Balances => ({
+const balancesOf = (program: ProgramView): CapacityBalances => ({
   creditLimit: program.creditLimit,
   externalUtilized: program.externalUtilized,
   reserved: program.reserved,
@@ -422,8 +423,6 @@ export class InboundProcessor {
     );
 
     const invoiceScale = minorUnits(reservation.originalCurrency);
-    const capacity = (value: Decimal) => formatAmount(value, CAPACITY_SCALE);
-    const available = Decimal.max(0, after.creditLimit.minus(after.externalUtilized).minus(after.reserved));
     await writeOutbox(tx, {
       type: RELEASE_EVENTS[row.reason],
       programId: program.id,
@@ -442,13 +441,13 @@ export class InboundProcessor {
         writeOffReason: row.writeOffReason,
         originalAmount: formatAmount(row.originalAmount, invoiceScale),
         originalCurrency: reservation.originalCurrency,
-        amount: capacity(row.amount),
+        amount: formatCapacity(row.amount),
         currency: program.currency,
         status: balances.status,
         outstanding: formatAmount(reservation.originalAmount.minus(balances.releasedOriginalAmount), invoiceScale),
-        capacityOutstanding: capacity(reservation.amount.minus(balances.releasedAmount)),
-        reservedAfter: capacity(after.reserved),
-        available: capacity(available),
+        capacityOutstanding: formatCapacity(reservation.amount.minus(balances.releasedAmount)),
+        reservedAfter: formatCapacity(after.reserved),
+        available: formatCapacity(capacityOf(after).available),
       },
     });
     await this.limitExcess(tx, after, balancesOf(program), envelope.messageId);
@@ -629,15 +628,20 @@ export class InboundProcessor {
     return 'create' in plan ? { wake: command.programId } : {};
   }
 
-  private async limitExcess(tx: Tx, program: ProgramView, before: Balances | undefined, messageId: string): Promise<void> {
-    const was = before ? overLimit(before) : overLimit(ZERO_BALANCES(program));
-    const now = overLimit(balancesOf(program));
+  private async limitExcess(
+    tx: Tx,
+    program: ProgramView,
+    before: CapacityBalances | undefined,
+    messageId: string,
+  ): Promise<void> {
+    const was = capacityOf(before ?? ZERO_BALANCES(program)).overLimit;
+    const now = capacityOf(program).overLimit;
     const started = was.isZero() && !now.isZero();
     const ended = !was.isZero() && now.isZero();
     if (!started && !ended) return;
 
     if (started) {
-      this.logger.warn(`LIMIT_EXCESS: program ${program.externalId} is over limit by ${now.toFixed(CAPACITY_SCALE)}`);
+      this.logger.warn(`LIMIT_EXCESS: program ${program.externalId} is over limit by ${formatCapacity(now)}`);
     }
     await writeOutbox(tx, {
       type: started ? 'PROGRAM_LIMIT_EXCESS_STARTED' : 'PROGRAM_LIMIT_EXCESS_ENDED',
@@ -647,11 +651,11 @@ export class InboundProcessor {
       occurredAt: this.clock.now(),
       data: {
         programId: program.externalId,
-        overLimit: formatAmount(now, CAPACITY_SCALE),
+        overLimit: formatCapacity(now),
         currency: program.currency,
-        creditLimit: formatAmount(program.creditLimit, CAPACITY_SCALE),
-        externalUtilized: formatAmount(program.externalUtilized, CAPACITY_SCALE),
-        reserved: formatAmount(program.reserved, CAPACITY_SCALE),
+        creditLimit: formatCapacity(program.creditLimit),
+        externalUtilized: formatCapacity(program.externalUtilized),
+        reserved: formatCapacity(program.reserved),
         causeMessageId: messageId,
       },
     });

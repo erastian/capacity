@@ -1,11 +1,12 @@
 import { Injectable } from '@nestjs/common';
-import { Decimal } from 'decimal.js';
 import { clientRefFilter } from '../shared/auth/visibility.js';
 import type { ProgramScope } from '../shared/auth/visibility.types.js';
+import { toDecimal } from '../shared/db/numeric.js';
 import { PrismaService } from '../shared/db/prisma.service.js';
 import { CURSOR_PART, decodeCursor, toPage } from '../shared/http/pagination.js';
 import type { Page } from '../shared/http/pagination.types.js';
-import { CAPACITY_SCALE, formatAmount } from '../shared/money/money.js';
+import { capacityOf } from '../shared/money/capacity.js';
+import { formatCapacity } from '../shared/money/money.js';
 import type { AvailabilityRow, AvailabilityView } from './programs.types.js';
 
 const AVAILABILITY = `
@@ -17,29 +18,28 @@ const AVAILABILITY = `
     FROM reservation x WHERE x.program_id = p.id
   ) r ON true`;
 
-const capacity = (value: Decimal) => formatAmount(value, CAPACITY_SCALE);
-
 function toView(row: AvailabilityRow): AvailabilityView {
-  const creditLimit = new Decimal(row.credit_limit.toString());
-  const externalUtilized = new Decimal(row.external_utilized.toString());
-  const reserved = new Decimal(row.reserved.toString());
-  const funded = new Decimal(row.funded.toString());
-  const totalUtilized = externalUtilized.plus(reserved);
-  const free = creditLimit.minus(totalUtilized);
+  const balances = {
+    creditLimit: toDecimal(row.credit_limit),
+    externalUtilized: toDecimal(row.external_utilized),
+    reserved: toDecimal(row.reserved),
+  };
+  const funded = toDecimal(row.funded);
+  const { totalUtilized, available, overLimit } = capacityOf(balances);
   return {
     programId: row.external_id,
     clientRef: row.client_ref,
     currency: row.currency,
     status: row.status,
     onHold: row.open_blocking_breaks > 0,
-    creditLimit: capacity(creditLimit),
-    externalUtilized: capacity(externalUtilized),
-    reserved: capacity(reserved),
-    committed: capacity(reserved.minus(funded)),
-    funded: capacity(funded),
-    totalUtilized: capacity(totalUtilized),
-    available: capacity(Decimal.max(free, 0)),
-    overLimit: capacity(Decimal.max(free.neg(), 0)),
+    creditLimit: formatCapacity(balances.creditLimit),
+    externalUtilized: formatCapacity(balances.externalUtilized),
+    reserved: formatCapacity(balances.reserved),
+    committed: formatCapacity(balances.reserved.minus(funded)),
+    funded: formatCapacity(funded),
+    totalUtilized: formatCapacity(totalUtilized),
+    available: formatCapacity(available),
+    overLimit: formatCapacity(overLimit),
     asOf: row.treasury_synced_at?.toISOString() ?? null,
   };
 }
